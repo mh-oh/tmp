@@ -20,6 +20,7 @@ For a quick start you can simply type the commands below.
 ~$ pip install "cython<3"
 ~$ pip install mujoco_py
 ~$ pip install numpy==1.23.4
+~$ pip install overrides
 ```
 
 ``rldev`` requires you to have Mujoco binaries and a license key.
@@ -38,3 +39,10 @@ DDPG and HER are based on the version introduced by OpenAI ``baselines`` ([paper
 ```console
 ~$ python experiments/fetch/ddpg+her.py --run=fetchpush.seed=1 --env=FetchPush-v1 --num_envs=8 --seed=1
 ```
+
+## References
+
+This code extends and/or modifies the following codebases:
+
+* [Modular RL](https://github.com/spitis/mrl) 
+* [B-Pref](https://github.com/rll-research/BPref)
