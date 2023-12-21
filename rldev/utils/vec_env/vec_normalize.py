@@ -2,7 +2,7 @@ import pickle
 
 import numpy as np
 
-from mrl.utils.vec_env import VecEnvWrapper
+from rldev.utils.vec_env import VecEnvWrapper
 
 class RunningMeanStd(object):
     def __init__(self, epsilon=1e-4, shape=()):

@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from mrl.utils.misc import AnnotatedAttrDict
+from rldev.utils.structure import AnnotatedAttrDict
 
 default_ddpg_config = lambda: AnnotatedAttrDict(
     device=('cuda' if torch.cuda.is_available() else 'cpu', 'torch device (cpu or gpu)'),

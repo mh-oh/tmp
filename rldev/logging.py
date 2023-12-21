@@ -1,4 +1,3 @@
-import mrl
 import numpy as np
 
 # temporary fix for dumb tensorflow / tensorboard error. https://github.com/pytorch/pytorch/issues/30966
@@ -16,7 +15,7 @@ import json
 import os
 import time
 import csv
-from mrl.modules.module import Node
+from rldev.agents.core import Node
 
 class Logger(Node):
   """
@@ -142,12 +141,14 @@ class Logger(Node):
       self.add_scalar('Train/Episode_steps', np.mean(self._episode_steps[-30:]))
 
   def save(self, save_folder):
+    return
     self._save_props([
         '_episode_rewards', '_episode_steps',
         '_steps', '_episodes', '_tabular', '_last_log_step'
     ], save_folder)
 
   def load(self, save_folder):
+    return
     self._load_props([
         '_episode_rewards', '_episode_steps',
         '_steps', '_episodes', '_tabular', '_last_log_step'

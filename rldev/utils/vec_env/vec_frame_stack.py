@@ -1,7 +1,7 @@
 import numpy as np
 from gym import spaces
 
-from mrl.utils.vec_env import VecEnvWrapper
+from rldev.utils.vec_env import VecEnvWrapper
 
 
 class VecFrameStack(VecEnvWrapper):

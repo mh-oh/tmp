@@ -2,7 +2,7 @@ from multiprocessing import Process, Pipe
 
 import numpy as np
 
-from mrl.utils.vec_env import VecEnv, CloudpickleWrapper
+from rldev.utils.vec_env import VecEnv, CloudpickleWrapper
 from gym import spaces
 
 
