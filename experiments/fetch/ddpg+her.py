@@ -68,7 +68,7 @@ def main(config):
   
   num_eps = max(config.num_envs * 3, 10)
   agent.test(num_eps)
-  agent.run(config.steps, config.epoch_steps, num_eps)
+  agent.run(config.epoch_steps, num_eps)
 
 
 if __name__ == '__main__':

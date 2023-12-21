@@ -33,6 +33,7 @@ class Agent(metaclass=ABCMeta):
     self._policy = policy(self)
     self._logger = Logger(self)
 
+    self._training_steps = config.steps
     self._training = True
 
     config = self._config
@@ -146,12 +147,11 @@ class OffPolicyAgent(Agent):
 
   @overrides
   def run(self, 
-          steps: int, 
           epoch_steps: int, 
           test_episodes: int, *args, **kwargs):
 
-    for epoch in range(int(steps // epoch_steps)):
-      elapsed = self.train(steps=epoch_steps)
+    for epoch in range(int(self._training_steps // epoch_steps)):
+      elapsed = self.train(epoch_steps)
       self.logger.log_color(
         f"({epoch}) Training one epoch takes {elapsed:.2f} seconds.")
       _, elapsed = self.test(test_episodes)
@@ -162,7 +162,7 @@ class OffPolicyAgent(Agent):
       self.save()
 
   def train(self, 
-            steps: int, 
+            epoch_steps: int, 
             render: bool = False, 
             dont_optimize: bool = False, 
             dont_train: bool = False):
@@ -174,7 +174,7 @@ class OffPolicyAgent(Agent):
     env = self._env
     state = env.state 
 
-    for _ in range(steps // env.num_envs):
+    for _ in range(epoch_steps // env.num_envs):
       action = self._policy(state)
       next_state, reward, done, info = env.step(action)
 
