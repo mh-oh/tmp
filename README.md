@@ -21,6 +21,9 @@ For a quick start you can simply type the commands below.
 ~$ pip install mujoco_py
 ~$ pip install numpy==1.23.4
 ~$ pip install overrides
+~$ pip install hydra-core==0.11.0
+~$ pip install omegaconf==1.4
+~$ pip install scikit-image
 ```
 
 ``rldev`` requires you to have Mujoco binaries and a license key.

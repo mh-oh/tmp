@@ -19,6 +19,8 @@ from rldev.utils.time import short_timestamp
 
 class Agent(metaclass=ABCMeta):
 
+  def setup_logger(self): return Logger(self)
+
   def __init__(self,
                config,
                env,
@@ -31,7 +33,7 @@ class Agent(metaclass=ABCMeta):
     self._env = env
     self._test_env = test_env
     self._policy = policy(self)
-    self._logger = Logger(self)
+    self._logger = self.setup_logger()
 
     self._training_steps = config.steps
     self._training = True
