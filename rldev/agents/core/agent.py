@@ -128,7 +128,6 @@ class OffPolicyAgent(Agent):
                buffer):
     super().__init__(config, env, test_env, policy)
     self._buffer = buffer(self)
-    self._reset_idxs = []
 
     self._config.env_steps = 0
     self._config.opt_steps = 0
@@ -177,19 +176,6 @@ class OffPolicyAgent(Agent):
     for _ in range(epoch_steps // env.num_envs):
       action = self._policy(state)
       next_state, reward, done, info = env.step(action)
-
-      if self._reset_idxs:
-        env.reset(self._reset_idxs)
-        for i in self._reset_idxs:
-          done[i] = True
-          if not 'done_observation' in info[i]:
-            if isinstance(next_state, np.ndarray):
-              info[i].done_observation = next_state[i]
-            else:
-              for key in next_state:
-                info[i].done_observation = {k: next_state[k][i] for k in next_state}
-        next_state = env.state
-        self._reset_idxs = []
 
       state, experience = debug_vectorized_experience(state, action, next_state, reward, done, info)
       self.process_experience(experience)
