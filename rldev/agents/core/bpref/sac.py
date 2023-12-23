@@ -146,7 +146,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
-import hydra
 
 
 def compute_state_entropy(obs, full_obs, k):
@@ -195,12 +194,11 @@ class SACAgent:
         self.actor_cfg = actor_cfg
         self.actor_betas = actor_betas
         self.alpha_lr = alpha_lr
-        
-        self.critic = hydra.utils.instantiate(critic_cfg).to(self.device)
-        self.critic_target = hydra.utils.instantiate(critic_cfg).to(
-            self.device)
+
+        self.critic = critic_cfg.cls(**critic_cfg.kwargs).to(self.device)
+        self.critic_target = critic_cfg.cls(**critic_cfg.kwargs).to(self.device)
         self.critic_target.load_state_dict(self.critic.state_dict())
-        self.actor = hydra.utils.instantiate(actor_cfg).to(self.device)
+        self.actor = actor_cfg.cls(**actor_cfg.kwargs).to(self.device)
         self.log_alpha = torch.tensor(np.log(init_temperature)).to(self.device)
         self.log_alpha.requires_grad = True
         
@@ -226,9 +224,8 @@ class SACAgent:
         self.critic_target.train()
     
     def reset_critic(self):
-        self.critic = hydra.utils.instantiate(self.critic_cfg).to(self.device)
-        self.critic_target = hydra.utils.instantiate(self.critic_cfg).to(
-            self.device)
+        self.critic = self.critic_cfg.cls(**self.critic_cfg.kwargs).to(self.device)
+        self.critic_target = self.critic_cfg.cls(**self.critic_cfg.kwargs).to(self.device)
         self.critic_target.load_state_dict(self.critic.state_dict())
         self.critic_optimizer = torch.optim.Adam(
             self.critic.parameters(),
@@ -245,7 +242,7 @@ class SACAgent:
             betas=self.alpha_betas)
         
         # reset actor
-        self.actor = hydra.utils.instantiate(self.actor_cfg).to(self.device)
+        self.actor = self.actor_cfg.cls(**self.actor_cfg.kwargs).to(self.device)
         self.actor_optimizer = torch.optim.Adam(
             self.actor.parameters(),
             lr=self.actor_lr,
