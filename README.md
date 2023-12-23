@@ -42,7 +42,7 @@ DDPG and HER are based on the version introduced by OpenAI ``baselines`` ([paper
 ~$ python experiments/fetch/ddpg+her.py --run=fetchpush.seed=1 --env=FetchPush-v1 --num_envs=8 --seed=1
 ```
 
-### PEBBLE on Metaworld Push
+### PEBBLE on Metaworld ButtonPresh
 ```console
 ~$ python experiments/metaworld/pebble.py
 ```
