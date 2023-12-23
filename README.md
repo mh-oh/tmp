@@ -22,6 +22,7 @@ For a quick start you can simply type the commands below.
 ~$ pip install numpy==1.23.4
 ~$ pip install overrides
 ~$ pip install scikit-image
+~$ pip install wandb
 ```
 
 ``rldev`` requires you to have Mujoco binaries and a license key.

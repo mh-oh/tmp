@@ -27,6 +27,15 @@ class Agent(metaclass=ABCMeta):
                test_env,
                policy):
 
+    this_run_path = Path(os.path.realpath(sys.argv[0]))
+    self._workspace = wdir = (Path(this_run_path.parent) 
+                              / "data" 
+                              / this_run_path.stem
+                              / f"{config.run}")
+
+    print(f"create working directory {wdir}")
+    wdir.mkdir(parents=True, exist_ok=True)
+
     self._nodes = OrderedDict()
 
     self._config = config
@@ -37,18 +46,6 @@ class Agent(metaclass=ABCMeta):
 
     self._training_steps = config.steps
     self._training = True
-
-    config = self._config
-    this_run_path = Path(os.path.realpath(sys.argv[0]))
-    self._workspace = wdir = (Path(this_run_path.parent) 
-                              / "data" 
-                              / this_run_path.stem
-                              / f"{config.run}.{short_timestamp()}")
-
-    print(f"create working directory {wdir}")
-    if wdir.exists():
-      raise ValueError(f"{wdir} already exists")
-    wdir.mkdir(parents=True)
 
   def __setattr__(self, name: str, value: Any):
     if isinstance(value, Node):
@@ -63,7 +60,7 @@ class Agent(metaclass=ABCMeta):
 
   @property
   def workspace(self):
-    return self._workspace
+    return self._workspace.resolve()
   
   @property
   def save_dir(self):

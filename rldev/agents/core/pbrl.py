@@ -10,30 +10,12 @@ from overrides import overrides
 
 from rldev.agents.core import Agent
 from rldev.agents.core.bpref import utils
-
-
-class DummyLogger:
-
-  def __init__(self, *args, **kwargs):
-    ...
-
-  def log(self, *args, **kwargs):
-    ...
-
-  def log_histogram(self, *args, **kwargs):
-    ...
-
-  def log_param(self, *args, **kwargs):
-    ...
-
-  def dump(self, *args, **kwargs):
-    ...
-
+from rldev.logging import DummyLogger
 
 class PbRLAgent(Agent, metaclass=ABCMeta):
 
   @overrides
-  def setup_logger(self): return DummyLogger()
+  def setup_logger(self): return DummyLogger(self)
 
   def __init__(self,
                config,
@@ -41,7 +23,8 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
                test_env,
                policy,
                buffer,
-               reward_model):
+               reward_model,
+               window=10):
     super().__init__(config,
                      env,
                      test_env,
@@ -49,28 +32,44 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
 
     self._buffer = buffer
     self._reward_model = reward_model
+    self._n_envs = n_envs = self._env.num_envs
 
-    self._feedbacks = 0
-    self._labeled_feedbacks = 0
-    
+    # What is this for? Probabily, $K$ in the paper?
+    self._interact_count = 0
+
+    self._logger.define("train/epoch",
+                        "train/episode",
+                        "train/episode_steps",
+                        "train/success_rate",
+                        "train/return",
+                        "train/pseudo_return",
+                        "train/feedbacks",
+                        "train/labeled_feedbacks",
+                        "test/success_rate",
+                        "test/return")
+
+    u"""Training records."""
+
     self._step = 0
     self._episode = 0
 
-    self._n_envs = n_envs = self._env.num_envs
-    self._episode_pseudo_return, self._done = np.zeros((n_envs,)), np.ones((n_envs,), dtype=bool)
+    self._done = np.ones((n_envs,), dtype=bool)
+    self._episode_step = np.zeros((n_envs,))
     self._episode_success = np.zeros((n_envs,))
     self._episode_return = np.zeros((n_envs,))
-    self._episode_step = np.zeros((n_envs,))
+    self._episode_pseudo_return = np.zeros((n_envs,))
 
-    self._episode_returns = []
-    self._episode_steps = []
-    self._episode_successes = []
+    # We keep track of recent `window` episodes for aggregation.
+    self._episode_steps = deque([], maxlen=window)
+    self._episode_successes = deque([], maxlen=window)
+    self._episode_returns = deque([], maxlen=window)
+    self._episode_pseudo_returns = deque([], maxlen=window)
 
-    # store train returns of recent 10 episodes
-    self._avg_train_true_return = deque([], maxlen=10) 
-    self._start_time = time.time()
+    # Number of human feedbacks until current step.
+    self._feedbacks = 0
+    self._labeled_feedbacks = 0
 
-    self._interact_count = 0
+    self._log_every_n_steps = config.log_every_n_steps
 
   @property
   def config(self):
@@ -82,11 +81,11 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
 
   def run(self, test_episodes: int):
 
-    epoch_length = self.config.eval_frequency
+    epoch_length = self.config.test_every_n_steps
     self.obs = self._env.reset()
     for epoch in range(self._training_steps // epoch_length):
+      self.logger.log("train/epoch", epoch, self._step)
       self.train(epoch_length)
-      self.logger.log('eval/episode', self._episode, self._step)
       self.test(test_episodes)
 
     self._policy.save(self.workspace, self._step)
@@ -98,15 +97,25 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
     for _ in range(epoch_length // self._n_envs):
 
       if np.any(self._done):
-        self._episode_returns += list(self._episode_return[self._done])
-        self._episode_successes += list(self._episode_success[self._done])
-        self._episode_steps += list(self._episode_step[self._done])
-        self._episode_return[self._done] = 0
-        self._episode_step[self._done] = 0
         self._episode += np.sum(self._done)
+        self._episode_steps.extend(self._episode_step[self._done])
+        self._episode_successes.extend(self._episode_success[self._done])
+        self._episode_returns.extend(self._episode_return[self._done])
+        self._episode_pseudo_returns.extend(self._episode_pseudo_return[self._done])
+        self._episode_success[self._done] = 0
+        self._episode_return[self._done] = 0
+        self._episode_pseudo_return[self._done] = 0
+        self._episode_step[self._done] = 0
         self._done[self._done] = False
 
-      self.logger.log("train/episode", self._episode, self._step)
+      if self._step % self._log_every_n_steps < self._n_envs:
+        self.logger.log("train/episode", self._episode, self._step)
+        self.logger.log("train/episode_steps", np.mean(self._episode_steps), self._step)
+        self.logger.log("train/success_rate", np.mean(self._episode_successes), self._step)
+        self.logger.log("train/return", np.mean(self._episode_returns), self._step)
+        self.logger.log("train/pseudo_return", np.mean(self._episode_pseudo_returns), self._step)
+        self.logger.log("train/feedbacks", self._feedbacks, self._step)
+        self.logger.log("train/labeled_feedbacks", self._labeled_feedbacks, self._step)
 
       # sample action for data collection
       assert self.obs.shape == (1, 39)
@@ -210,8 +219,7 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
       episode_returns.extend(episode_return)
       episode_successes.extend(episode_success)
     
-    self.logger.log("eval/episode_return", 
+    self.logger.log("test/return", 
                     np.mean(episode_returns), self._step)
-    self.logger.log("eval/success_rate",
+    self.logger.log("test/success_rate",
                     np.mean(episode_successes), self._step)
-    self.logger.dump(self._step)

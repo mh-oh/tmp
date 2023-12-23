@@ -51,7 +51,7 @@ class PEBBLE(PbRLAgent):
       self._reward_model.change_batch(frac(self._step))
       
       # update margin --> not necessary / will be updated soon
-      new_margin = np.mean(self._avg_train_true_return) * (self.config.segment / self._env._max_episode_steps)
+      new_margin = np.mean(self._episode_returns) * (self.config.segment / self._env._max_episode_steps)
       self._reward_model.set_teacher_thres_skip(new_margin)
       self._reward_model.set_teacher_thres_equal(new_margin)
       
@@ -70,7 +70,7 @@ class PEBBLE(PbRLAgent):
         self._reward_model.change_batch(frac(self._step))
         
         # update margin --> not necessary / will be updated soon
-        new_margin = np.mean(self._avg_train_true_return) * (self.config.segment / self._env._max_episode_steps)
+        new_margin = np.mean(self._episode_returns) * (self.config.segment / self._env._max_episode_steps)
         self._reward_model.set_teacher_thres_skip(new_margin * self.config.teacher_eps_skip)
         self._reward_model.set_teacher_thres_equal(new_margin * self.config.teacher_eps_equal)
         

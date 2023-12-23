@@ -82,14 +82,6 @@ class DiagGaussianActor(nn.Module):
         dist = SquashedNormal(mu, std)
         return dist
 
-    def log(self, logger, step):
-        for k, v in self.outputs.items():
-            logger.log_histogram(f'train_actor/{k}_hist', v, step)
-
-        for i, m in enumerate(self.trunk):
-            if type(m) == nn.Linear:
-                logger.log_param(f'train_actor/fc{i}', m, step)
-
 
 ############################################################
 ############################################################
@@ -126,17 +118,6 @@ class DoubleQCritic(nn.Module):
         self.outputs['q2'] = q2
 
         return q1, q2
-
-    def log(self, logger, step):
-        for k, v in self.outputs.items():
-            logger.log_histogram(f'train_critic/{k}_hist', v, step)
-
-        assert len(self.Q1) == len(self.Q2)
-        for i, (m1, m2) in enumerate(zip(self.Q1, self.Q2)):
-            assert type(m1) == type(m2)
-            if type(m1) is nn.Linear:
-                logger.log_param(f'train_critic/q1_fc{i}', m1, step)
-                logger.log_param(f'train_critic/q2_fc{i}', m2, step)
 
 ############################################################
 ############################################################
@@ -287,14 +268,13 @@ class SACAgent:
         critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(
             current_Q2, target_Q)
         
-        if print_flag:
-            logger.log('train_critic/loss', critic_loss, step)
+        # if print_flag:
+        #     logger.log('train_critic/loss', critic_loss, step)
 
         # Optimize the critic
         self.critic_optimizer.zero_grad()
         critic_loss.backward()
         self.critic_optimizer.step()
-        self.critic.log(logger, step)
         
     def update_critic_state_ent(
         self, obs, full_obs, action, next_obs, not_done, logger,
@@ -308,18 +288,18 @@ class SACAgent:
         
         # compute state entropy
         state_entropy = compute_state_entropy(obs, full_obs, k=K)
-        if print_flag:
-            logger.log("train_critic/entropy", state_entropy.mean(), step)
-            logger.log("train_critic/entropy_max", state_entropy.max(), step)
-            logger.log("train_critic/entropy_min", state_entropy.min(), step)
+        # if print_flag:
+        #     logger.log("train_critic/entropy", state_entropy.mean(), step)
+        #     logger.log("train_critic/entropy_max", state_entropy.max(), step)
+        #     logger.log("train_critic/entropy_min", state_entropy.min(), step)
         
         self.s_ent_stats.update(state_entropy)
         norm_state_entropy = state_entropy / self.s_ent_stats.std
         
-        if print_flag:
-            logger.log("train_critic/norm_entropy", norm_state_entropy.mean(), step)
-            logger.log("train_critic/norm_entropy_max", norm_state_entropy.max(), step)
-            logger.log("train_critic/norm_entropy_min", norm_state_entropy.min(), step)
+        # if print_flag:
+        #     logger.log("train_critic/norm_entropy", norm_state_entropy.mean(), step)
+        #     logger.log("train_critic/norm_entropy_max", norm_state_entropy.max(), step)
+        #     logger.log("train_critic/norm_entropy_min", norm_state_entropy.min(), step)
         
         if self.normalize_state_entropy:
             state_entropy = norm_state_entropy
@@ -332,15 +312,13 @@ class SACAgent:
         critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(
             current_Q2, target_Q)
         
-        if print_flag:
-            logger.log('train_critic/loss', critic_loss, step)
+        # if print_flag:
+        #     logger.log('train_critic/loss', critic_loss, step)
 
         # Optimize the critic
         self.critic_optimizer.zero_grad()
         critic_loss.backward()
         self.critic_optimizer.step()
-
-        self.critic.log(logger, step)
     
     def save(self, model_dir, step):
         torch.save(
@@ -372,25 +350,23 @@ class SACAgent:
 
         actor_Q = torch.min(actor_Q1, actor_Q2)
         actor_loss = (self.alpha.detach() * log_prob - actor_Q).mean()
-        if print_flag:
-            logger.log('train_actor/loss', actor_loss, step)
-            logger.log('train_actor/target_entropy', self.target_entropy, step)
-            logger.log('train_actor/entropy', -log_prob.mean(), step)
+        # if print_flag:
+        #     logger.log('train_actor/loss', actor_loss, step)
+        #     logger.log('train_actor/target_entropy', self.target_entropy, step)
+        #     logger.log('train_actor/entropy', -log_prob.mean(), step)
 
         # optimize the actor
         self.actor_optimizer.zero_grad()
         actor_loss.backward()
         self.actor_optimizer.step()
 
-        self.actor.log(logger, step)
-
         if self.learnable_temperature:
             self.log_alpha_optimizer.zero_grad()
             alpha_loss = (self.alpha *
                           (-log_prob - self.target_entropy).detach()).mean()
-            if print_flag:
-                logger.log('train_alpha/loss', alpha_loss, step)
-                logger.log('train_alpha/value', self.alpha, step)
+            # if print_flag:
+            #     logger.log('train_alpha/loss', alpha_loss, step)
+            #     logger.log('train_alpha/value', self.alpha, step)
             alpha_loss.backward()
             self.log_alpha_optimizer.step()
             
@@ -401,7 +377,7 @@ class SACAgent:
 
             print_flag = False
             if index == gradient_update -1:
-                logger.log('train/batch_reward', reward.mean(), step)
+                # logger.log('train/batch_reward', reward.mean(), step)
                 print_flag = True
                 
             self.update_critic(obs, action, reward, next_obs, not_done_no_max,
@@ -421,7 +397,7 @@ class SACAgent:
 
             print_flag = False
             if index == gradient_update -1:
-                logger.log('train/batch_reward', reward.mean(), step)
+                # logger.log('train/batch_reward', reward.mean(), step)
                 print_flag = True
                 
             self.update_critic_state_ent(

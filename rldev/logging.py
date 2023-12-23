@@ -1,6 +1,6 @@
+from pathlib import Path
 import numpy as np
 
-# temporary fix for dumb tensorflow / tensorboard error. https://github.com/pytorch/pytorch/issues/30966
 try:
   import tensorflow as tf
   import tensorboard as tb
@@ -16,6 +16,46 @@ import os
 import time
 import csv
 from rldev.agents.core import Node
+import wandb
+from overrides import overrides
+import sys
+
+class DummyLogger(Node):
+
+  @property
+  def workspace(self):
+    return wandb.run.dir
+
+  def __init__(self, agent):
+    super().__init__(agent)
+
+    wandb.login()
+    wandb.init(project=agent.config.logging.wandb,
+               dir=agent.workspace)
+    self._metrics = set()
+
+  def define(self, *metrics):
+
+    if not self._metrics:
+      wandb.define_metric("train/step")
+    for key in metrics:
+      wandb.define_metric(
+        key, step_metric="train/step")
+    self._metrics.update(metrics)
+
+  def log(self, key, x, step):
+    if key not in self._metrics:
+      raise ValueError(f"unknown metric '{key}'")
+    wandb.log({key: x, "train/step": step})
+
+  def dump(self, *args, **kwargs):
+    ...
+
+  @overrides
+  def save(self, dir: Path): ...
+  @overrides
+  def load(self, dir: Path): ...
+
 
 class Logger(Node):
   """

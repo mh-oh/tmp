@@ -9,6 +9,9 @@ from rldev.configs import Conf
 
 config = Conf()
 
+config.logging = {}
+config.logging.wandb = "rldev"
+
 config.experiment = 'PEBBLE'
 config.segment = 50
 config.activation = 'tanh'
@@ -33,16 +36,16 @@ config.teacher_eps_equal = 0
 config.reward_schedule = 0
 config.steps = 1000000
 config.replay_buffer_capacity = config.steps
-config.eval_frequency = 10000
+config.test_every_n_steps = 10000
 config.num_eval_episodes = 10
 config.device = 'cuda'
-config.log_frequency = 10000
+config.log_every_n_steps = 3000
 config.log_save_tb = True
 config.save_video = False
 config.seed = 1
 config.env = 'metaworld_button-press-v2'
 config.gradient_update = 1
-config.run = 'pebble.metaworld.buttonpresh'
+config.run = 'buttonpresh'
 
 config.policy = {}
 config.policy.name = 'sac'
