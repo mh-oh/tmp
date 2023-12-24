@@ -30,6 +30,10 @@ class PEBBLE(PbRLAgent):
     ...
 
   @overrides
+  def process_episodic_records(self):
+    return super().process_episodic_records()
+
+  @overrides
   def optimize_reward_model(self):
 
     # To update reward schedule

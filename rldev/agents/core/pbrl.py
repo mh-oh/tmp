@@ -91,34 +91,12 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
     self._policy.save(self.workspace, self._step)
     self._reward_model.save(self.workspace, self._step)
 
-
   def train(self, epoch_length):
 
     for _ in range(epoch_length // self._n_envs):
-
-      if np.any(self._done):
-        self._episode += np.sum(self._done)
-        self._episode_steps.extend(self._episode_step[self._done])
-        self._episode_successes.extend(self._episode_success[self._done])
-        self._episode_returns.extend(self._episode_return[self._done])
-        self._episode_pseudo_returns.extend(self._episode_pseudo_return[self._done])
-        self._episode_success[self._done] = 0
-        self._episode_return[self._done] = 0
-        self._episode_pseudo_return[self._done] = 0
-        self._episode_step[self._done] = 0
-        self._done[self._done] = False
-
-      if self._step % self._log_every_n_steps < self._n_envs:
-        self.logger.log("train/episode", self._episode, self._step)
-        self.logger.log("train/episode_steps", np.mean(self._episode_steps), self._step)
-        self.logger.log("train/success_rate", np.mean(self._episode_successes), self._step)
-        self.logger.log("train/return", np.mean(self._episode_returns), self._step)
-        self.logger.log("train/pseudo_return", np.mean(self._episode_pseudo_returns), self._step)
-        self.logger.log("train/feedbacks", self._feedbacks, self._step)
-        self.logger.log("train/labeled_feedbacks", self._labeled_feedbacks, self._step)
+      self.process_episodic_records(self)
 
       # sample action for data collection
-      assert self.obs.shape == (1, 39)
       if self._step < self.config.num_seed_steps:
         action = np.array([self._env.action_space.sample() for _ in range(self._env.num_envs)])
       else:
@@ -128,14 +106,14 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
       self.optimize_reward_model()
       self.optimize_policy()
 
-      next_obs, reward, self._done, info = self._env.step(action)
+      maybe_next_observation, reward, self._done, info = self._env.step(action)
       # As the VecEnv resets automatically, new_obs is already the
       # first observation of the next episode
-      __next_obs = copy.deepcopy(next_obs)
+      next_observation = copy.deepcopy(maybe_next_observation)
       for i, done in enumerate(self._done):
         terminal = info[i].get("terminal_observation")
         if done and terminal is not None:
-          __next_obs[i] = terminal
+          next_observation[i] = terminal
 
       pseudo_reward = self._reward_model.r_hat(np.concatenate([self.obs, action], axis=-1))[..., 0]
 
@@ -158,13 +136,37 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
                               action,
                               reward,
                               pseudo_reward,
-                              __next_obs,
+                              next_observation,
                               self._done,
                               done_no_max)
 
-      self.obs = next_obs
+      self.obs = maybe_next_observation
       self._step += self._n_envs
       self._interact_count += self._n_envs
+
+  @abstractmethod
+  def process_episodic_records(self):
+
+    if np.any(self._done):
+      self._episode += np.sum(self._done)
+      self._episode_steps.extend(self._episode_step[self._done])
+      self._episode_successes.extend(self._episode_success[self._done])
+      self._episode_returns.extend(self._episode_return[self._done])
+      self._episode_pseudo_returns.extend(self._episode_pseudo_return[self._done])
+      self._episode_success[self._done] = 0
+      self._episode_return[self._done] = 0
+      self._episode_pseudo_return[self._done] = 0
+      self._episode_step[self._done] = 0
+      self._done[self._done] = False
+
+    if self._step % self._log_every_n_steps < self._n_envs:
+      self.logger.log("train/episode", self._episode, self._step)
+      self.logger.log("train/episode_steps", np.mean(self._episode_steps), self._step)
+      self.logger.log("train/success_rate", np.mean(self._episode_successes), self._step)
+      self.logger.log("train/return", np.mean(self._episode_returns), self._step)
+      self.logger.log("train/pseudo_return", np.mean(self._episode_pseudo_returns), self._step)
+      self.logger.log("train/feedbacks", self._feedbacks, self._step)
+      self.logger.log("train/labeled_feedbacks", self._labeled_feedbacks, self._step)
 
   @abstractmethod
   def optimize_reward_model(self):
