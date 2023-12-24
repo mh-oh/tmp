@@ -31,7 +31,8 @@ class DummyLogger(Node):
 
     wandb.login()
     wandb.init(project=agent.config.logging.wandb,
-               dir=agent.workspace)
+               dir=agent.workspace,
+               config=agent.config)
     self._metrics = set()
 
   def define(self, *metrics):
