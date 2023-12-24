@@ -48,6 +48,11 @@ DDPG and HER are based on the version introduced by OpenAI ``baselines`` ([paper
 ~$ python experiments/metaworld/pebble.py
 ```
 
+### PEBBLE on FetchPush-v1
+```console
+~$ python experiments/fetch/pebble.py
+```
+
 ## References
 
 This code extends and/or modifies the following codebases:
