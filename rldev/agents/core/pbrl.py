@@ -94,7 +94,7 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
   def train(self, epoch_length):
 
     for _ in range(epoch_length // self._n_envs):
-      self.process_episodic_records(self)
+      self.process_episodic_records()
 
       # sample action for data collection
       if self._step < self.config.num_seed_steps:
