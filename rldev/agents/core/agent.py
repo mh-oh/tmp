@@ -238,9 +238,9 @@ class OffPolicyAgent(Agent):
           steps[i] += 1
           if done:
             dones[i] = 1. 
-          if 'is_success' in info:
+          if 'success' in info:
             record_success = True
-            is_success[i] = max(info['is_success'], is_success[i]) if any_success else info['is_success'] 
+            is_success[i] = max(info['success'], is_success[i]) if any_success else info['success'] 
 
       for ep_reward, step, is_succ in zip(ep_rewards, steps, is_success):
         if record_success:
