@@ -336,6 +336,7 @@ class SharedMemoryTrajectoryBuffer():
       batch_idxs = np.random.randint(self.size, size=batch_size)
 
     if self.pool is not None:
+      raise
       res = self.pool.map(future_samples, np.array_split(batch_idxs, self.n_cpu))
       res = [np.concatenate(x, 0) for x in zip(*res)]
       return res

@@ -140,7 +140,9 @@ class Policy(Node, ActorCritic):
     return self._qf_target[0]
 
   @overrides
-  def __call__(self, observation, greedy=False, **kwargs):
+  def __call__(self, 
+               observation: Union[th.Tensor, Dict[str, th.Tensor]],
+               greedy: bool = False):
 
     action_scale = self._max_action
     agent = self.agent
