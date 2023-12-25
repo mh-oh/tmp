@@ -328,8 +328,12 @@ class RewardModel:
         # Generate time index 
         time_index = np.array([list(range(i*len_traj,
                                             i*len_traj+self.size_segment)) for i in range(mb_size)])
-        time_index_2 = time_index + np.random.choice(len_traj-self.size_segment, size=mb_size, replace=True).reshape(-1,1)
-        time_index_1 = time_index + np.random.choice(len_traj-self.size_segment, size=mb_size, replace=True).reshape(-1,1)
+        time_index_2 = time_index
+        if len_traj > self.size_segment:
+            time_index_2 += np.random.choice(len_traj-self.size_segment, size=mb_size, replace=True).reshape(-1,1)
+        time_index_1 = time_index
+        if len_traj > self.size_segment:
+            time_index_1 += np.random.choice(len_traj-self.size_segment, size=mb_size, replace=True).reshape(-1,1)
         
         sa_t_1 = np.take(sa_t_1, time_index_1, axis=0) # Batch x size_seg x dim of s&a
         r_t_1 = np.take(r_t_1, time_index_1, axis=0) # Batch x size_seg x 1
