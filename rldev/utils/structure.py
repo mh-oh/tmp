@@ -1,6 +1,7 @@
 
 import numpy as np
 
+from collections import defaultdict, OrderedDict
 from collections.abc import *
 
 
@@ -43,19 +44,18 @@ class AnnotatedAttrDict(AttrDict):
     super().__init__(self, **valuedict)
 
 
-def recursive_map(fn, data):
-  if not isinstance(data, Mapping):
-    return fn(data)
-  else:
-    return type(data)(
-      (key, recursive_map(fn, x)) for key, x in data.items())
+def zip_items(*dicts):
+  d, *dicts = dicts
+  for key, x in d.items():
+    yield key, (x, *map(lambda d: d[key], dicts))
 
-def recursive_map_zip(fn, data1, data2):
-  if not isinstance(data1, Mapping):
-    return fn(data1, data2)
+
+def recursive_map(fn, *args):
+  if not all(isinstance(a, Mapping) for a in args):
+    return fn(*args)
   else:
-    return type(data1)(
-      (key, recursive_map_zip(fn, x, data2[key])) for key, x in data1.items())
+    return type(args[0])(
+      (key, recursive_map(fn, *x)) for key, x in zip_items(*args))
 
 
 def resolve_ellipsis(index, ndims):
@@ -68,6 +68,21 @@ def resolve_ellipsis(index, ndims):
     return index
   else:
     return (*index[:i], *((slice(None, None, None),) * (ndims - len(index) + 1)), *index[i+1:])
+
+
+def nest(items, sep=".", cls=dict):
+
+  if not isinstance(items, Iterable):
+    raise ValueError(f"")
+
+  dict = cls()
+  for key, x in items:
+    keys = key.split('.')
+    curr = dict
+    for k in keys[:-1]:
+      curr = curr.setdefault(k, cls())
+    curr[keys[-1]] = x
+  return dict
 
 
 class ArrDict:
@@ -123,6 +138,7 @@ class ArrDict:
       yield x
 
   def get(self, key, sep="."):
+
     x = self._data
     try:
       for k in key.split(sep):
@@ -130,6 +146,27 @@ class ArrDict:
     except KeyError:
       raise KeyError(f"'{key}'") from None
     return x
+
+  def set(self, key, data, sep="."):
+
+    if not isinstance(data, np.ndarray):
+      raise ValueError(f"")
+
+    *keys, last = key.split(sep)
+    try:
+      x = self._data
+      for k in keys:
+        x = x[k]
+    except KeyError:
+      raise KeyError(f"'{key}'") from None
+    else:
+      try:
+        before = x[last]
+        if before.shape != data.shape:
+          raise ValueError(f"")
+        x[last] = data
+      except KeyError:
+        raise KeyError(f"{key}") from None
 
   def copy(self):
     return ArrDict(
@@ -165,7 +202,7 @@ class ArrDict:
       x[self._resolve(index) + (...,)] = y
 
     if isinstance(data, Mapping):
-      recursive_map_zip(set, self._data, data)
+      recursive_map(set, self._data, data)
     elif isinstance(data, ArrDict):
       raise NotImplementedError("which rules should we follow?")
 

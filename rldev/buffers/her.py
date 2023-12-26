@@ -13,6 +13,8 @@ from rldev.buffers.core.shared_buffer import SharedMemoryTrajectoryBuffer as Buf
 from rldev.utils import torch as ptu
 from rldev.utils.env import flatten_state
 
+from rldev.buffers.basic import *
+
 
 class OnlineHERBuffer(Node):
 
@@ -82,7 +84,111 @@ class OnlineHERBuffer(Node):
     # else:
     self._fut, self._act, self._ach, self._beh = parse_hindsight_mode(self._agent._config.her)
 
+
+    ####################################
+    n_envs = env.num_envs
+    capacity = self._size
+    observation_space = env.observation_space
+    action_space = env.action_space
+
+    self._capacity = capacity
+    self._observation_space = observation_space
+    self._observation_spec = observation_spec(observation_space)
+    self._action_space = action_space
+    self._action_spec = action_spec(action_space)
+
+    print("observation_spec:")
+    print(self._observation_spec)
+    print("action_spec:")
+    print(self._action_spec)
+
+    self._capacity = max(capacity // n_envs, 1)
+    leading_shape = (self._capacity, self._n_envs)
+
+    def container(spec):
+      return np.zeros(
+        (*leading_shape, *spec.shape), dtype=spec.dtype)
+    def dict_container(spec):
+      return recursive_map(container, spec)
+
+    self._observations = dict_container(self._observation_spec)
+    self._actions = container(self._action_spec)
+    self._rewards = container(Spec((), float))
+    self._next_observations = dict_container(self._observation_spec)
+    self._dones = container(Spec((), bool))
+    self._infos = [None for _ in range(self._capacity)]
+
+    self._cursor = 0
+    self._full = False
+
+    self._episode_cursor = np.zeros((n_envs,), dtype=int)
+    self._episode_length = np.zeros((self._capacity, n_envs), dtype=int)
+    self._episode_starts = np.zeros((self._capacity, n_envs), dtype=int)
+    ###################################
+
+
+  def _len(self):
+    return len(self._infos)
+
+  def _add(self,
+           observation: Dict,
+           action: np.ndarray,
+           reward: np.ndarray,
+           next_observation: Dict,
+           done: np.ndarray,
+           info: Dict[str, Any]):
+
+    assert (self._buffer.BUFF.buffer_bg.data != self._buffer.BUFF.buffer_dg.data).sum() <= 0
+
+    def store(to, what):
+      to[self._cursor] = np.copy(what)
+
+    store(self._actions, action)
+    store(self._rewards, reward)
+    store(self._dones, done)
+
+    def store(to, what):
+      def fn(x, y):
+        x[self._cursor, ...] = np.copy(y)
+      recursive_map(fn, to, what)
+
+    store(self._observations, observation)
+    store(self._next_observations, next_observation)
+
+    self._infos[self._cursor] = info
+
+    self._cursor += 1
+    if self._cursor == self._capacity:
+      self._full, self._cursor = True, 0
+
   def _process_experience(self, exp):
+
+    for i in range(self._n_envs):
+      s = self._episode_starts[self._cursor, i]
+      l = self._episode_length[self._cursor, i]
+      if l > 0:
+        index = np.arange(self._cursor, s + l) % self._capacity
+        self._episode_length[index, i] = 0
+
+    self._episode_starts[self._cursor, :] = np.copy(self._episode_cursor)
+
+    self._add(exp.state,
+              exp.action,
+              exp.reward,
+              exp.next_state,
+              exp.done,
+              {})
+
+    for i in range(self._n_envs):
+      if exp.trajectory_over[i]:
+        s = self._episode_cursor[i]
+        e = self._cursor
+        if e < s:
+          e += self._capacity
+        index = np.arange(s, e) % self._cursor
+        self._episode_length[index, i] = e - s
+        self._episode_cursor[i] = self._cursor
+
     # if getattr(self._agent, 'logger'):
     self._agent._logger.add_tabular('Replay buffer size', len(self._buffer))
     done = np.expand_dims(exp.done, 1)  # format for replay buffer
@@ -128,7 +234,141 @@ class OnlineHERBuffer(Node):
         self._buffer.add_trajectory(*trajectory)
         self._subbuffers[i] = []
 
+  def none(self, index):
+
+    index = np.unravel_index(index, self._episode_length.shape)
+
+    def get(x, index):
+      return recursive_map(lambda x: x[index], x)
+
+    observations = get(self._observations, index)
+    actions = self._actions[index]
+    rewards = self._rewards[index]
+    next_observations = get(self._next_observations, index)
+    dones = self._dones[index]
+
+    return DictExperience(observations,
+                          actions,
+                          rewards,
+                          next_observations,
+                          dones)
+
+  def real(self, index):
+
+    (observations, 
+     actions, 
+     rewards, 
+     next_observations, 
+     dones) = self.none(index)
+    
+    new_goals = np.copy(observations.get("desired_goal")) #############
+
+    observations["desired_goal"] = new_goals
+    next_observations["desired_goal"] = new_goals
+    
+    return DictExperience(observations,
+                          actions,
+                          rewards,
+                          next_observations,
+                          dones)
+
+  def future(self, index):
+
+    (observations, 
+     actions, 
+     rewards, 
+     next_observations, 
+     dones) = self.none(index)
+
+    index = np.unravel_index(index, self._episode_length.shape)
+    batch_index, env_index = index
+
+    episode_starts = self._episode_starts[index]
+    episode_length = self._episode_length[index]
+    future_index = np.random.randint(batch_index, episode_starts + episode_length) % self._capacity
+    new_goals = self._next_observations["achieved_goal"][future_index, env_index]
+
+    observations["desired_goal"] = new_goals
+    next_observations["desired_goal"] = new_goals
+    
+    return DictExperience(observations,
+                          actions,
+                          rewards,
+                          next_observations,
+                          dones)
+  
+  def desired(self, index):
+    
+    (observations, 
+     actions, 
+     rewards, 
+     next_observations, 
+     dones) = self.none(index)
+    
+    batch_index = np.random.choice(self._cursor, size=index.shape)
+    env_index = np.random.choice(self._n_envs, size=index.shape)
+    new_goals = self._observations["desired_goal"][batch_index, env_index]
+
+    observations["desired_goal"] = new_goals
+    next_observations["desired_goal"] = new_goals
+
+    return DictExperience(observations,
+                          actions,
+                          rewards,
+                          next_observations,
+                          dones)
+
+  def achieved(self, index):
+    
+    (observations, 
+     actions, 
+     rewards, 
+     next_observations, 
+     dones) = self.none(index)
+    
+    batch_index = np.random.choice(self._cursor, size=index.shape)
+    env_index = np.random.choice(self._n_envs, size=index.shape)
+    new_goals = self._next_observations["achieved_goal"][batch_index, env_index]
+
+    observations["desired_goal"] = new_goals
+    next_observations["desired_goal"] = new_goals
+
+    return DictExperience(observations,
+                          actions,
+                          rewards,
+                          next_observations,
+                          dones)
+
+  def behavior(self, index):
+    
+    (observations, 
+     actions, 
+     rewards, 
+     next_observations, 
+     dones) = self.none(index)
+    
+    batch_index = np.random.choice(self._cursor, size=index.shape)
+    env_index = np.random.choice(self._n_envs, size=index.shape)
+    new_goals = self._observations["desired_goal"][batch_index, env_index] ##################
+
+    observations["desired_goal"] = new_goals
+    next_observations["desired_goal"] = new_goals
+
+    return DictExperience(observations,
+                          actions,
+                          rewards,
+                          next_observations,
+                          dones)
+
   def sample(self, batch_size, to_torch=True):
+
+    is_episode = self._episode_length > 0
+    if not np.any(is_episode):
+      raise ValueError(f"")
+
+    episode_index = np.flatnonzero(is_episode)
+    index = np.random.choice(episode_index, size=batch_size, replace=True)
+
     if hasattr(self._agent, 'prioritized_replay'):
       raise
       batch_idxs = self._agent.prioritized_replay(batch_size)
@@ -151,6 +391,131 @@ class OnlineHERBuffer(Node):
 
         fut_idxs, act_idxs, ach_idxs, beh_idxs, real_idxs = np.array_split(batch_idxs, 
           np.cumsum([fut_batch_size, act_batch_size, ach_batch_size, beh_batch_size]))
+        
+        future, actual, achieved, behavior, real = np.array_split(index, 
+          np.cumsum([fut_batch_size, act_batch_size, ach_batch_size, beh_batch_size]))
+
+        real = self.real((real))
+        future = self.future((future))
+        actual = self.desired((actual))
+        achieved = self.achieved((achieved))
+        behavior = self.behavior((behavior))
+
+        def concatenate(*args):
+          return np.concatenate(args, axis=0)
+
+        observations = recursive_map(
+          concatenate, *(real.observation, 
+                         future.observation, 
+                         actual.observation, 
+                         achieved.observation, 
+                         behavior.observation))
+        next_observations = recursive_map(
+          concatenate, *(real.next_observation, 
+                         future.next_observation, 
+                         actual.next_observation, 
+                         achieved.next_observation, 
+                         behavior.next_observation))
+        actions = concatenate(real.action,
+                              future.action,
+                              actual.action,
+                              achieved.action,
+                              behavior.action)
+
+        rewards = self._agent._env.compute_reward(
+          next_observations["achieved_goal"], observations["desired_goal"], {}).reshape(-1, 1).astype(np.float32)
+
+        if self._agent._config.get('never_done'):
+          dones = np.zeros_like(rewards, dtype=np.float32)
+        elif self._agent._config.get('first_visit_succ'):
+          dones = np.round(rewards + 1.)
+        else:
+          raise ValueError("Never done or first visit succ must be set in goal environments to use HER.")
+        
+        gammas = self._agent._config.gamma * (1. - dones)
+
+        observations = np.concatenate([observations["observation"], observations["desired_goal"]], axis=-1)
+        next_observations = np.concatenate([next_observations["observation"], next_observations["desired_goal"]], axis=-1)
+        if self._agent._observation_normalizer is not None:
+          fn = self.agent._observation_normalizer
+          observations = fn(observations, update=False).astype(np.float32)
+          next_observations = fn(next_observations, update=False).astype(np.float32)
+
+        B, _ = observations.shape
+        if batch_size != B:
+          raise AssertionError(f"{batch_size} != {B}")
+        B, _ = actions.shape
+        if batch_size != B:
+          raise AssertionError(f"{batch_size} != {B}")
+        if to_torch:
+          return (ptu.torch(observations), ptu.torch(actions),
+                ptu.torch(rewards), ptu.torch(next_observations),
+                ptu.torch(gammas))
+        else:
+          return (observations, actions, rewards, next_observations, gammas)
+
+        print(observations["observation"].shape)
+
+        exit(0)
+        print(future.observation["observation"].shape)
+        x = concatenate((future.observation, future.observation), axis=0)
+        print(x.get("observation").shape)
+        print(x.shape)
+        observations = concatenate(
+          (real.observation, 
+           future.observation, 
+           actual.observation, 
+           achieved.observation, 
+           behavior.observation), axis=0)
+        actions = np.concatenate(
+          (real.action, 
+           future.action, 
+           actual.action, 
+           achieved.action, 
+           behavior.action), axis=0)
+        rewards = np.concatenate(
+          (real.reward, 
+           future.reward, 
+           actual.reward, 
+           achieved.reward, 
+           behavior.reward), axis=0)
+        next_observations = concatenate(
+          (real.next_observation, 
+           future.next_observation, 
+           actual.next_observation, 
+           achieved.observation, 
+           behavior.next_observation), axis=0)
+        dones = np.concatenate(
+          (real.done, 
+           future.done, 
+           actual.done, 
+           achieved.done, 
+           behavior.done), axis=0)
+        
+        rewards = self._agent._env.compute_reward(
+          next_observations.get("achieved_goal"), observations.get("desired_goal"), {}).reshape(-1, 1).astype(np.float32)
+
+        if self._agent._config.get('never_done'):
+          dones = np.zeros_like(rewards, dtype=np.float32)
+        elif self._agent._config.get('first_visit_succ'):
+          dones = np.round(rewards + 1.)
+        else:
+          raise ValueError("Never done or first visit succ must be set in goal environments to use HER.")
+        
+        gammas = self._agent._config.gamma * (1. - dones)
+
+        if to_torch:
+          return (ptu.torch(observations), ptu.torch(actions),
+                ptu.torch(rewards), ptu.torch(next_observations),
+                ptu.torch(gammas))
+        else:
+          return (observations, actions, rewards, next_observations, gammas)
+
+        exit(0)
+
+        # print(fut_idxs.shape, future.shape)
+        # print(act_idxs.shape)
+        # print(ach_idxs.shape)
 
         # Sample the real batch (i.e., goals = behavioral goals)
         states, actions, rewards, next_states, dones, previous_ags, ags, goals, _, original =\
@@ -159,10 +524,11 @@ class OnlineHERBuffer(Node):
         # Sample the future batch
         states_fut, actions_fut, _, next_states_fut, dones_fut, previous_ags_fut, ags_fut, _, _, original_fut, goals_fut =\
           self._buffer.sample_future(fut_batch_size, batch_idxs=fut_idxs)
-
         # Sample the actual batch
-        states_act, actions_act, _, next_states_act, dones_act, previous_ags_act, ags_act, _, _, original_act, goals_act =\
+        # state, action, reward, next_state, done, previous_ag, ag, bg, dg
+        states_act, actions_act, _, next_states_act, dones_act, previous_ags_act, ags_act, _, __dg, original_act, goals_act =\
           self._buffer.sample_from_goal_buffer('dg', act_batch_size, batch_idxs=act_idxs)
+        # assert (__dg != goals_act).sum() <= 0
 
         # Sample the achieved batch
         states_ach, actions_ach, _, next_states_ach, dones_ach, previous_ags_ach, ags_ach, _, _, original_ach, goals_ach =\
@@ -199,6 +565,7 @@ class OnlineHERBuffer(Node):
           dones = np.concatenate([dones, dones_fut, dones_act, dones_ach, dones_beh], 0)
 
         if self._agent._config.sparse_reward_shaping:
+          raise
           previous_ags = np.concatenate([previous_ags, previous_ags_fut, previous_ags_act, previous_ags_ach, previous_ags_beh], 0)
           previous_phi = -np.linalg.norm(previous_ags - goals, axis=1, keepdims=True)
           current_phi  = -np.linalg.norm(ags - goals, axis=1, keepdims=True)

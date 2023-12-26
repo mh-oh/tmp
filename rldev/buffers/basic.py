@@ -4,7 +4,6 @@ import torch as th
 
 from abc import *
 from collections import OrderedDict
-from dataclasses import dataclass
 from gym import spaces
 from overrides import overrides
 from typing import *
@@ -13,13 +12,24 @@ from rldev.utils import torch as thu
 from rldev.utils.structure import *
 
 
+def dataclass(cls, /, **kwargs):
+
+  from dataclasses import dataclass, fields
+  class C(dataclass(cls, **kwargs)):
+    __qualname__ = cls.__qualname__
+    def __iter__(self):
+      for field in fields(self):
+        yield getattr(self, field.name)
+  return C
+
+
 @dataclass
 class Spec:
   shape: ...; dtype: ...
 
 
 @dataclass
-class Step:
+class Experience:
   u"""A transition or multiple transitions."""
 
   observation: np.ndarray
@@ -30,14 +40,14 @@ class Step:
 
 
 @dataclass
-class DictStep:
+class DictExperience:
   u"""A transition or multiple transitions of 
   dictionary observations."""
 
-  observation: ArrDict
+  observation: OrderedDict
   action: np.ndarray
   reward: np.ndarray
-  next_observation: ArrDict
+  next_observation: OrderedDict
   done: np.ndarray
 
 
@@ -82,10 +92,10 @@ class Base(metaclass=ABCMeta):
     self._n_envs = n_envs
     self._capacity = capacity
     self._observation_space = observation_space
-    self._action_space = action_space
     self._observation_spec = observation_spec(observation_space)
-
+    self._action_space = action_space
     self._action_spec = action_spec(action_space)
+    
     self._cursor = 0
     self._full = False
 
@@ -138,32 +148,38 @@ class DictBuffer(Base):
       return np.zeros(
         (*leading_shape, *spec.shape), dtype=spec.dtype)
     def dict_container(spec):
-      return ArrDict(
-        recursive_map(container, spec), shape=leading_shape)
+      return recursive_map(container, spec)
 
     self._observations = dict_container(self._observation_spec)
-    self._next_observations = dict_container(self._observation_spec)
     self._actions = container(self._action_spec)
     self._rewards = container(Spec((), float))
+    self._next_observations = dict_container(self._observation_spec)
     self._dones = container(Spec((), bool))
     self._infos = [None for _ in range(self._capacity)]
 
   def add(self,
           observation: Dict,
-          next_observation: Dict,
           action: np.ndarray,
           reward: np.ndarray,
+          next_observation: Dict,
           done: np.ndarray,
           info: Dict[str, Any]):
 
     def store(to, what):
-      to[self._cursor] = copy(what)
+      to[self._cursor] = np.copy(what)
+
+    store(self._actions, action)
+    store(self._rewards, reward)
+    store(self._dones, done)
+
+    def store(to, what):
+      def fn(x, y):
+        x[self._cursor, ...] = np.copy(y)
+      recursive_map(fn, to, what)
 
     store(self._observations, observation)
     store(self._next_observations, next_observation)
-    store(self._actions, action.copy())
-    store(self._rewards, reward.copy())
-    store(self._dones, done.copy())
+
     self._infos[self._cursor] = info
 
     self._cursor += 1
@@ -178,15 +194,18 @@ class DictBuffer(Base):
              np.random.randint(
                0, high=n_envs, size=(len(index),)))
 
-    observations = self._observations[index]
+    def get(x, index):
+      return recursive_map(lambda x: x[index], x)
+
+    observations = get(self._observations, index)
     actions = self._actions[index]
     rewards = self._rewards[index]
-    next_observations = self._next_observations[index]
+    next_observations = get(self._next_observations, index)
     dones = self._dones[index]
 
-    return Step(observations,
-                actions,
-                rewards,
-                next_observations,
-                dones)
+    return DictExperience(observations,
+                          actions,
+                          rewards,
+                          next_observations,
+                          dones)
 
