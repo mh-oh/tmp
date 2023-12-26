@@ -238,9 +238,12 @@ class OffPolicyAgent(Agent):
           steps[i] += 1
           if done:
             dones[i] = 1. 
-          if 'is_success' in info:
+          maybe_sucess = info.get("success", None)
+          if maybe_sucess is None:
+            maybe_sucess = info.get("is_success", None)
+          if maybe_sucess is not None:
             record_success = True
-            is_success[i] = max(info['is_success'], is_success[i]) if any_success else info['is_success'] 
+            is_success[i] = max(maybe_sucess, is_success[i]) if any_success else maybe_sucess
 
       for ep_reward, step, is_succ in zip(ep_rewards, steps, is_success):
         if record_success:
