@@ -8,6 +8,7 @@ from gym import spaces
 from overrides import overrides
 from typing import *
 
+from rldev.agents.core import Node, Agent
 from rldev.utils import torch as thu
 from rldev.utils.structure import *
 
@@ -80,14 +81,15 @@ def copy(x):
     raise AssertionError()
 
 
-class Base(metaclass=ABCMeta):
+class Base(Node, metaclass=ABCMeta):
 
   def __init__(self,
+               agent: Agent,
                n_envs: int,
                capacity: int,
                observation_space: spaces.Space,
                action_space: spaces.Space):
-    super().__init__()
+    super().__init__(agent)
 
     self._n_envs = n_envs
     self._capacity = capacity
@@ -99,10 +101,9 @@ class Base(metaclass=ABCMeta):
     self._cursor = 0
     self._full = False
 
-  def size(self):
-    if self._full:
-      return self._capacity
-    return self._cursor
+  @abstractmethod
+  def __len__(self):
+    raise NotImplementedError()
 
   @abstractmethod
   def add(self, *args, **kwargs):
@@ -116,13 +117,8 @@ class Base(metaclass=ABCMeta):
     self._cursor = 0
     self._full = False
 
-  def sample(self, batch_size: int):
-    upper_bound = self._capacity if self._full else self._cursor
-    index = np.random.randint(0, upper_bound, size=batch_size)
-    return self._get_samples(index)
-
   @abstractmethod
-  def _get_samples(self, index):
+  def sample(self, size: int):
     raise NotImplementedError()
 
 
@@ -132,11 +128,13 @@ class DictBuffer(Base):
   """
 
   def __init__(self,
+               agent: Agent,
                n_envs: int,
                capacity: int,
                observation_space: spaces.Dict,
                action_space: spaces.Dict):
-    super().__init__(n_envs, 
+    super().__init__(agent,
+                     n_envs, 
                      capacity, 
                      observation_space, 
                      action_space)
@@ -187,7 +185,9 @@ class DictBuffer(Base):
       self._full, self._cursor = True, 0
   
   @overrides
-  def _get_samples(self, index):
+  def sample(self, size: int):
+    upper_bound = self._capacity if self._full else self._cursor
+    index = np.random.randint(0, upper_bound, size=size)
 
     n_envs = self._n_envs
     index = (index, 

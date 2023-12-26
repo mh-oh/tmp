@@ -10,7 +10,7 @@ from rldev.agents.common.normalizer import *
 from rldev.agents.common.action_noise import *
 from rldev.agents.ddpg import DDPG, DDPGPolicy
 from rldev.agents.policy.ac import Actor, Critic
-from rldev.buffers.her import OnlineHERBuffer
+from rldev.buffers.her import HindsightBuffer
 from rldev.configs import push_args, best_slide_config
 from rldev.environments import EnvModule
 from rldev.utils import torch as ptu
@@ -45,6 +45,15 @@ def main(config):
                  critic,
                  config.critic_lr,
                  config.critic_weight_decay))
+  
+  buffer = (
+    lambda agent:
+      HindsightBuffer(agent,
+                      train_env.num_envs,
+                      config.replay_size,
+                      train_env.observation_space,
+                      train_env.action_space,
+                      config.her))
 
   observation_normalizer = (
     lambda agent: Normalizer(agent, MeanStdNormalizer()))
@@ -62,7 +71,7 @@ def main(config):
                train_env,
                test_env,
                policy,
-               OnlineHERBuffer,
+               buffer,
                observation_normalizer,
                action_noise)
   
