@@ -58,6 +58,19 @@ def recursive_map(fn, *args):
       (key, recursive_map(fn, *x)) for key, x in zip_items(*args))
 
 
+def copy(x):
+  if isinstance(x, np.ndarray):
+    return np.copy(x)
+  elif isinstance(x, Mapping):
+    def fn(x):
+      if not isinstance(x, np.ndarray):
+        raise AssertionError(f"{x}: {type(x).__name__}")
+      return np.copy(x)
+    return recursive_map(fn, x)
+  else:
+    raise AssertionError(f"{x}: {type(x).__name__}")
+
+
 def resolve_ellipsis(index, ndims):
   
   if not isinstance(index, tuple):

@@ -15,7 +15,7 @@ from rldev.agents.common.normalizer import *
 from rldev.agents.common.action_noise import *
 from rldev.agents.ddpg import DDPG, DDPGPolicy
 from rldev.agents.policy.ac import Actor, Critic
-from rldev.buffers.her import HindsightBuffer
+from rldev.buffers.basic import DictBuffer
 from rldev.configs import push_args, best_slide_config
 from rldev.environments import EnvModule
 from rldev.utils import torch as ptu
@@ -122,6 +122,7 @@ class BoxGoalEnv:
     return self.observation(box_observation), *extra
   
   def compute_reward(self, achieved, desired, info):
+    raise
     
     mode = self._reward_mode
     if mode == "dense":
@@ -194,12 +195,11 @@ def main(config):
   
   buffer = (
     lambda agent:
-      HindsightBuffer(agent,
-                      train_env.num_envs,
-                      config.replay_size,
-                      train_env.observation_space,
-                      train_env.action_space,
-                      config.her))
+      DictBuffer(agent,
+                 train_env.num_envs,
+                 config.replay_size,
+                 train_env.observation_space,
+                 train_env.action_space))
 
   observation_normalizer = (
     lambda agent: Normalizer(agent, MeanStdNormalizer()))
@@ -212,7 +212,6 @@ def main(config):
 
   if e.goal_env:
     config.never_done = True  # NOTE: This is important in the standard Goal environments, which are never done
-  assert config.never_done
 
   agent = DDPG(config,
                train_env,

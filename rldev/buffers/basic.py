@@ -1,4 +1,5 @@
 
+from pathlib import Path
 import numpy as np
 import torch as th
 
@@ -10,75 +11,8 @@ from typing import *
 
 from rldev.agents.core import Node, Agent
 from rldev.utils import torch as thu
+from rldev.utils.env import observation_spec, action_spec, Spec, DictExperience
 from rldev.utils.structure import *
-
-
-def dataclass(cls, /, **kwargs):
-
-  from dataclasses import dataclass, fields
-  class C(dataclass(cls, **kwargs)):
-    __qualname__ = cls.__qualname__
-    def __iter__(self):
-      for field in fields(self):
-        yield getattr(self, field.name)
-  return C
-
-
-@dataclass
-class Spec:
-  shape: ...; dtype: ...
-
-
-@dataclass
-class Experience:
-  u"""A transition or multiple transitions."""
-
-  observation: np.ndarray
-  action: np.ndarray
-  reward: np.ndarray
-  next_observation: np.ndarray
-  done: np.ndarray
-
-
-@dataclass
-class DictExperience:
-  u"""A transition or multiple transitions of 
-  dictionary observations."""
-
-  observation: OrderedDict
-  action: np.ndarray
-  reward: np.ndarray
-  next_observation: OrderedDict
-  done: np.ndarray
-
-
-def action_spec(space: spaces.Space):
-  if isinstance(space, spaces.Box):
-    return Spec(space.shape, space.dtype)
-  raise NotImplementedError()
-
-
-def observation_spec(space: spaces.Space):
-  if isinstance(space, spaces.Box):
-    return Spec(space.shape, space.dtype)
-  if isinstance(space, spaces.Dict):
-    return OrderedDict(
-      (key, observation_spec(subspace)) 
-        for (key, subspace) in space.spaces.items())
-  raise NotImplementedError()
-
-
-def copy(x):
-  if isinstance(x, np.ndarray):
-    return np.copy(x)
-  elif isinstance(x, Mapping):
-    def fn(x):
-      if not isinstance(x, np.ndarray):
-        raise AssertionError()
-      return np.copy(x)
-    return recursive_map(fn, x)
-  else:
-    raise AssertionError()
 
 
 class Base(Node, metaclass=ABCMeta):
@@ -126,6 +60,16 @@ class DictBuffer(Base):
   u"""Replay buffer used in off-policy algorithms.
   This expects dictionary observations.
   """
+
+  @overrides
+  def save(self, dir: Path): ...
+
+  @overrides
+  def load(self, dir: Path): ...
+
+  @overrides
+  def __len__(self):
+    return (self._capacity if self._full else self._cursor) * self._n_envs
 
   def __init__(self,
                agent: Agent,
@@ -199,13 +143,34 @@ class DictBuffer(Base):
 
     observations = get(self._observations, index)
     actions = self._actions[index]
-    rewards = self._rewards[index]
+    rewards = self._rewards[index].reshape(size, 1).astype(np.float32)
     next_observations = get(self._next_observations, index)
     dones = self._dones[index]
 
-    return DictExperience(observations,
-                          actions,
-                          rewards,
-                          next_observations,
-                          dones)
+    if self._agent._config.get('never_done'):
+      dones = np.zeros_like(rewards, dtype=np.float32)
+    else:
+      raise ValueError("Never done or first visit succ must be set in goal environments to use HER.")
+    
+    gammas = self._agent._config.gamma * (1. - dones)
 
+    observations = np.concatenate([observations["observation"], observations["desired_goal"]], axis=-1)
+    next_observations = np.concatenate([next_observations["observation"], next_observations["desired_goal"]], axis=-1)
+
+    fn = self.agent._observation_normalizer
+    if fn is not None:
+      observations = fn(observations, update=False).astype(np.float32)
+      next_observations = fn(next_observations, update=False).astype(np.float32)
+
+    return (thu.torch(observations), thu.torch(actions),
+          thu.torch(rewards), thu.torch(next_observations),
+          thu.torch(gammas))
+
+
+  def _process_experience(self, exp):
+    self.add(exp.state,
+             exp.action,
+             exp.reward,
+             exp.next_state,
+             exp.done,
+             {})

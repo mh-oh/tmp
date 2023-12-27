@@ -1,6 +1,10 @@
 
 import numpy as np
+
+from collections import OrderedDict
 from copy import deepcopy
+from gym import spaces
+
 from rldev.utils.structure import AttrDict
 
 
@@ -47,3 +51,59 @@ def debug_vectorized_experience(state, action, next_state, reward, done, info):
   experience.reset_state = next_state
   
   return next_state, experience
+
+
+def dataclass(cls, /, **kwargs):
+
+  from dataclasses import dataclass, fields
+  class C(dataclass(cls, **kwargs)):
+    __qualname__ = cls.__qualname__
+    def __iter__(self):
+      for field in fields(self):
+        yield getattr(self, field.name)
+  return C
+
+
+@dataclass
+class Spec:
+  shape: ...; dtype: ...
+
+
+@dataclass
+class Experience:
+  u"""A transition or multiple transitions."""
+
+  observation: np.ndarray
+  action: np.ndarray
+  reward: np.ndarray
+  next_observation: np.ndarray
+  done: np.ndarray
+
+
+@dataclass
+class DictExperience:
+  u"""A transition or multiple transitions of 
+  dictionary observations."""
+
+  observation: OrderedDict
+  action: np.ndarray
+  reward: np.ndarray
+  next_observation: OrderedDict
+  done: np.ndarray
+
+
+def action_spec(space: spaces.Space):
+  if isinstance(space, spaces.Box):
+    return Spec(space.shape, space.dtype)
+  raise NotImplementedError()
+
+
+def observation_spec(space: spaces.Space):
+  if isinstance(space, spaces.Box):
+    return Spec(space.shape, space.dtype)
+  if isinstance(space, spaces.Dict):
+    return OrderedDict(
+      (key, observation_spec(subspace)) 
+        for (key, subspace) in space.spaces.items())
+  raise NotImplementedError()
+

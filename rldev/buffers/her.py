@@ -235,8 +235,10 @@ class HindsightBuffer(DictBuffer):
                           achieved.action,
                           behavior.action)
 
+    info = {"next_observation": next_observations,
+            "action": actions}
     rewards = self._agent._env.compute_reward(
-      next_observations["achieved_goal"], observations["desired_goal"], {}).reshape(size, 1).astype(np.float32)
+      next_observations["achieved_goal"], observations["desired_goal"], info).reshape(size, 1).astype(np.float32)
 
     if self._agent._config.get('never_done'):
       dones = np.zeros_like(rewards, dtype=np.float32)
@@ -249,8 +251,9 @@ class HindsightBuffer(DictBuffer):
 
     observations = np.concatenate([observations["observation"], observations["desired_goal"]], axis=-1)
     next_observations = np.concatenate([next_observations["observation"], next_observations["desired_goal"]], axis=-1)
-    if self._agent._observation_normalizer is not None:
-      fn = self.agent._observation_normalizer
+    
+    fn = self.agent._observation_normalizer
+    if fn is not None:
       observations = fn(observations, update=False).astype(np.float32)
       next_observations = fn(next_observations, update=False).astype(np.float32)
 

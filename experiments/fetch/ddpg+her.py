@@ -105,8 +105,6 @@ if __name__ == '__main__':
     default=1000000, type=int, help="training steps")
   parser.add_argument("--epoch_steps", 
     default=5000, type=int, help="length of an epoch in steps")
-  parser.add_argument("--episode_steps",
-    default=50, type=int, help="length of an episode in steps")
   parser.add_argument("--policy_layers",
     nargs='+', default=(512, 512, 512), type=int, help="hidden layers for actor/critic")
   args = parser.parse_args()
