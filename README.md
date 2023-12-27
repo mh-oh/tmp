@@ -43,7 +43,7 @@ DDPG and HER are based on the version introduced by OpenAI ``baselines`` ([paper
 ~$ python experiments/fetch/ddpg+her.py --run=fetch-push.seed=1 --env=FetchPush-v1 --num_envs=8 --seed=1
 ```
 
-### DDPG+HER with dense rewards on button-press-v2
+### DDPG+HER on button-press-v2
 ```console
 python experiments/metaworld/ddpg+her.py --run=button-press.seed=1 --env=button-press-v2 --num_envs=8 --seed=1
 ```
