@@ -90,8 +90,8 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
       self.train(epoch_length)
       self.test(test_episodes)
 
-    self._policy.save(self.workspace, self._step)
-    self._reward_model.save(self.workspace, self._step)
+    # self._policy.save(self.workspace, self._step)
+    # self._reward_model.save(self.workspace, self._step)
 
   def train(self, epoch_length):
 
