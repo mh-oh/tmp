@@ -59,7 +59,7 @@ def tie_weights(src, trg):
     trg.bias = src.bias
     
 def make_metaworld_env(cfg):
-    env_name = cfg.env.replace('metaworld_','')
+    env_name = cfg.env
     if env_name in _env_dict.ALL_V2_ENVIRONMENTS:
         env_cls = _env_dict.ALL_V2_ENVIRONMENTS[env_name]
     else:

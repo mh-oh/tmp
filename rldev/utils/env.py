@@ -4,6 +4,7 @@ import numpy as np
 from collections import OrderedDict
 from copy import deepcopy
 from gym import spaces
+from typing import *
 
 from rldev.utils.structure import AttrDict
 
@@ -107,3 +108,47 @@ def observation_spec(space: spaces.Space):
         for (key, subspace) in space.spaces.items())
   raise NotImplementedError()
 
+
+def flatten_space(space: spaces.Space):
+  
+  low, high, dtype = [], [], []
+  def append(x):
+    low.append(x.low); high.append(x.high); dtype.append(x.dtype)
+
+  for key, subspace in space.spaces.items():
+    if isinstance(subspace, spaces.Dict):
+      subspace = flatten_space(subspace)
+    else:
+      if not isinstance(subspace, spaces.Box):
+        raise ValueError()
+      if len(subspace.shape) > 1:
+        raise ValueError()
+    append(subspace)
+  
+  return spaces.Box(low=np.concatenate(low),
+                    high=np.concatenate(high),
+                    dtype=np.result_type(*dtype))
+
+
+def flatten_observation(space: spaces.Dict, 
+                        observation: Dict[str, Any]):
+
+  xs = []
+  for key, subspace in space.spaces.items():
+    x = observation[key]
+    if isinstance(subspace, spaces.Dict):
+      x = flatten_observation(subspace, x)
+    else:
+      if not isinstance(subspace, spaces.Box):
+        raise ValueError()
+      if len(subspace.shape) > 1:
+        raise ValueError()
+    xs.append(x)
+  return np.concatenate(xs, axis=-1)
+
+
+def get_success_info(info: dict):
+  sucess = info.get("success", None)
+  if sucess is None:
+    sucess = info.get("is_success", None)
+  return sucess

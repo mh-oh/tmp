@@ -22,12 +22,10 @@ class PEBBLE(PbRLAgent):
                      reward_model)
 
   @overrides
-  def save(self):
-    ...
+  def save(self): ...
   
   @overrides
-  def load(self):
-    ...
+  def load(self): ...
 
   @overrides
   def process_episodic_records(self):
@@ -63,7 +61,7 @@ class PEBBLE(PbRLAgent):
       self.learn_reward(first_flag=1)
       
       # relabel buffer
-      self._buffer.relabel_with_predictor(self._reward_model)
+      self._buffer.relabel_rewards(self._reward_model)
       
       # reset interact_count
       self._interact_count = 0
@@ -83,7 +81,7 @@ class PEBBLE(PbRLAgent):
           self._reward_model.set_batch(self.config.max_feedback - self._feedbacks)
             
         self.learn_reward()
-        self._buffer.relabel_with_predictor(self._reward_model)
+        self._buffer.relabel_rewards(self._reward_model)
 
   @overrides
   def optimize_policy(self):

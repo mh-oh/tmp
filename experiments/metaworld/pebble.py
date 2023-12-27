@@ -1,8 +1,11 @@
 
+import numpy as np
+
+from overrides import overrides
 
 from rldev.agents.core.bpref import utils
-from rldev.agents.core.bpref.replay_buffer import ReplayBuffer
-from rldev.agents.core.bpref.sac import DoubleQCritic, DiagGaussianActor, SACAgent
+from rldev.buffers.basic import PEBBLEBuffer
+from rldev.agents.core.bpref.sac import DoubleQCritic, DiagGaussianActor, SACPolicy
 from rldev.agents.core.bpref.reward_model import RewardModel
 from rldev.agents.pebble import PEBBLE
 from rldev.configs import Conf
@@ -43,13 +46,13 @@ config.log_every_n_steps = 3000
 config.log_save_tb = True
 config.save_video = False
 config.seed = 1
-config.env = 'metaworld_button-press-v2'
+config.env = 'button-press-v2'
 config.gradient_update = 1
 config.run = 'buttonpresh'
 
 config.policy = {}
 config.policy.name = 'sac'
-config.policy.cls = SACAgent
+config.policy.cls = SACPolicy
 
 config.policy.kwargs = {}
 config.policy.kwargs.obs_dim = ...
@@ -84,28 +87,49 @@ config.actor.kwargs.hidden_dim = 256
 config.actor.kwargs.log_std_bounds = [-5, 2]
 
 
+from experiments.metaworld.ddpg import BoxGoalEnv
+class ButtonPressV2(BoxGoalEnv):
+
+  @overrides
+  def index(self, key):
+
+    shape = self._box_observation_space.shape
+    dim = np.prod(shape)
+    if key == "desired_goal":
+      return [36, 37, 38]
+    elif key == "achieved_goal":
+      return [4, 5, 6]
+    elif key == "observation":
+      return np.delete(
+        np.arange(dim).reshape(shape), self.index("desired_goal"))
+
+
 def main(cfg):
 
   utils.set_seed_everywhere(cfg.seed)
 
-  env = utils.make_metaworld_env(cfg)
-  test_env = utils.make_metaworld_env(cfg)
-
   from rldev.utils.vec_env import DummyVecEnv as _DummyVecEnv
   class DummyVecEnv(_DummyVecEnv):
+
+    def to_box_observation(self, observation):
+      return self.envs[0].to_box_observation(observation)
+
     @property
     def _max_episode_steps(self):
       return self.envs[0]._max_episode_steps
   
-  env = DummyVecEnv([lambda: env])
-  test_env = DummyVecEnv([lambda: test_env])
+  env = DummyVecEnv([lambda: ButtonPressV2(utils.make_metaworld_env(cfg))])
+  test_env = DummyVecEnv([lambda: ButtonPressV2(utils.make_metaworld_env(cfg))])
 
-  buffer = ReplayBuffer(
-          env.observation_space.shape,
-          env.action_space.shape,
-          int(cfg.replay_buffer_capacity),
-          "cuda")
-  cfg.policy.kwargs.obs_dim = env.observation_space.shape[0]
+  buffer = (
+    lambda agent:
+      PEBBLEBuffer(agent,
+                   env.num_envs,
+                   int(cfg.replay_buffer_capacity),
+                   env.observation_space,
+                   env.action_space))
+
+  cfg.policy.kwargs.obs_dim = env.envs[0].box_observation_space.shape[0]
   cfg.policy.kwargs.action_dim = env.action_space.shape[0]
   cfg.policy.kwargs.action_range = [
     float(env.action_space.low.min()), float(env.action_space.high.max())]
@@ -117,9 +141,9 @@ def main(cfg):
   cfg.policy.kwargs.critic_cfg = cfg.critic
   cfg.policy.kwargs.actor_cfg = cfg.actor
 
-  policy = cfg.policy.cls(**cfg.policy.kwargs)
+  policy = lambda agent: cfg.policy.cls(agent, **cfg.policy.kwargs)
   reward_model = RewardModel(
-      env.observation_space.shape[0],
+      env.envs[0].box_observation_space.shape[0],
       env.action_space.shape[0],
       ensemble_size=cfg.ensemble_size,
       size_segment=cfg.segment,
@@ -137,7 +161,7 @@ def main(cfg):
   agent = PEBBLE(cfg,
                  env,
                  test_env,
-                 lambda agent: policy,
+                 policy,
                  buffer,
                  reward_model)
   agent.run(cfg.num_eval_episodes)

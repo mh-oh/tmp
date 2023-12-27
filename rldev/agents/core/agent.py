@@ -13,7 +13,7 @@ from typing import *
 
 from rldev.agents.core import Node
 from rldev.logging import Logger
-from rldev.utils.env import discounted_sum, debug_vectorized_experience
+from rldev.utils.env import discounted_sum, debug_vectorized_experience, get_success_info
 from rldev.utils.time import short_timestamp
 
 
@@ -237,13 +237,11 @@ class OffPolicyAgent(Agent):
           ep_rewards[i].append(rew)
           steps[i] += 1
           if done:
-            dones[i] = 1. 
-          maybe_sucess = info.get("success", None)
-          if maybe_sucess is None:
-            maybe_sucess = info.get("is_success", None)
-          if maybe_sucess is not None:
+            dones[i] = 1.
+          success = get_success_info(info)
+          if success is not None:
             record_success = True
-            is_success[i] = max(maybe_sucess, is_success[i]) if any_success else maybe_sucess
+            is_success[i] = max(success, is_success[i]) if any_success else success
 
       for ep_reward, step, is_succ in zip(ep_rewards, steps, is_success):
         if record_success:

@@ -1,13 +1,19 @@
 
+import numpy as np
 import gym
 
+from collections import OrderedDict
+from gym import spaces
+from overrides import overrides
+
 from rldev.agents.core.bpref import utils
-from rldev.agents.core.bpref.replay_buffer import ReplayBuffer
-from rldev.agents.core.bpref.sac import DoubleQCritic, DiagGaussianActor, SACAgent
+from rldev.buffers.basic import PEBBLEBuffer
+from rldev.agents.core.bpref.sac import DoubleQCritic, DiagGaussianActor, SACPolicy
 from rldev.agents.core.bpref.reward_model import RewardModel
 from rldev.agents.pebble import PEBBLE
 from rldev.configs import Conf
-from rldev.environments.wrappers import *
+from rldev.utils.env import observation_spec, flatten_space, flatten_observation
+
 
 config = Conf()
 
@@ -45,13 +51,13 @@ config.log_every_n_steps = 3000
 config.log_save_tb = True
 config.save_video = False
 config.seed = 1
-config.env = "FetchPush-v1"
+config.env = "FetchPushDense-v1"
 config.gradient_update = 1
-config.run = 'fetchpush.seed=1'
+config.run = 'fetchpushdense.seed=1'
 
 config.policy = {}
 config.policy.name = 'sac'
-config.policy.cls = SACAgent
+config.policy.cls = SACPolicy
 
 config.policy.kwargs = {}
 config.policy.kwargs.obs_dim = ...
@@ -86,34 +92,61 @@ config.actor.kwargs.hidden_dim = 256
 config.actor.kwargs.log_std_bounds = [-5, 2]
 
 
+class DictGoalEnv:
+
+  def __init__(self, env):
+
+    self._env = env
+    self._dict_observation_space = env.observation_space
+    self._dict_spec = observation_spec(self._dict_observation_space)
+
+    self.observation_space = self._dict_observation_space
+    self.box_observation_space = flatten_space(self._dict_observation_space)
+
+  def to_dict_observation(self, box_observation):
+
+    if not isinstance(box_observation, np.ndarray):
+      raise ValueError(f"")
+    return spaces.unflatten(self._dict_observation_space, 
+                            box_observation)
+
+  def to_box_observation(self, dict_observation):    
+    
+    if not isinstance(dict_observation, (dict, OrderedDict)):
+      raise ValueError(f"")
+    return flatten_observation(self._dict_observation_space, 
+                               dict_observation)
+
+  def __getattr__(self, name):
+    return getattr(self._env, name)
+
+
 def main(cfg):
 
   utils.set_seed_everywhere(cfg.seed)
 
-  def make(cfg):
-    env = BoxObservation(gym.make(cfg.env))
-    env = SuccessInfo(env)
-    env.seed(cfg.seed)
-    return env
-
-  env = make(cfg)
-  test_env = make(cfg)
-
   from rldev.utils.vec_env import DummyVecEnv as _DummyVecEnv
   class DummyVecEnv(_DummyVecEnv):
+
+    def to_box_observation(self, observation):
+      return self.envs[0].to_box_observation(observation)
+
     @property
     def _max_episode_steps(self):
-      return self.envs[0].spec.max_episode_steps
-  
-  env = DummyVecEnv([lambda: env])
-  test_env = DummyVecEnv([lambda: test_env])
+      return self.envs[0]._max_episode_steps
 
-  buffer = ReplayBuffer(
-          env.observation_space.shape,
-          env.action_space.shape,
-          int(cfg.replay_buffer_capacity),
-          "cuda")
-  cfg.policy.kwargs.obs_dim = env.observation_space.shape[0]
+  env = DummyVecEnv([lambda: DictGoalEnv(gym.make(cfg.env))])
+  test_env = DummyVecEnv([lambda: DictGoalEnv(gym.make(cfg.env))])
+
+  buffer = (
+    lambda agent:
+      PEBBLEBuffer(agent,
+                   env.num_envs,
+                   int(cfg.replay_buffer_capacity),
+                   env.observation_space,
+                   env.action_space))
+
+  cfg.policy.kwargs.obs_dim = env.envs[0].box_observation_space.shape[0]
   cfg.policy.kwargs.action_dim = env.action_space.shape[0]
   cfg.policy.kwargs.action_range = [
     float(env.action_space.low.min()), float(env.action_space.high.max())]
@@ -125,9 +158,9 @@ def main(cfg):
   cfg.policy.kwargs.critic_cfg = cfg.critic
   cfg.policy.kwargs.actor_cfg = cfg.actor
 
-  policy = cfg.policy.cls(**cfg.policy.kwargs)
+  policy = lambda agent: cfg.policy.cls(agent, **cfg.policy.kwargs)
   reward_model = RewardModel(
-      env.observation_space.shape[0],
+      env.envs[0].box_observation_space.shape[0],
       env.action_space.shape[0],
       ensemble_size=cfg.ensemble_size,
       size_segment=cfg.segment,
@@ -145,7 +178,7 @@ def main(cfg):
   agent = PEBBLE(cfg,
                  env,
                  test_env,
-                 lambda agent: policy,
+                 policy,
                  buffer,
                  reward_model)
   agent.run(cfg.num_eval_episodes)

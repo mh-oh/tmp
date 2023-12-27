@@ -88,7 +88,7 @@ class BoxGoalEnv:
 
   def to_box_observation(self, dict_observation):    
     
-    if not isinstance(dict_observation, OrderedDict):
+    if not isinstance(dict_observation, (dict, OrderedDict)):
       raise ValueError(f"")
 
     spec = self._box_spec
@@ -144,6 +144,7 @@ class BoxGoalEnv:
       return -d
     
     raise ValueError(f"...")
+
 
 class PushV2(BoxGoalEnv):
 

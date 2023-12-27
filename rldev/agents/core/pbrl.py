@@ -11,6 +11,8 @@ from overrides import overrides
 from rldev.agents.core import Agent
 from rldev.agents.core.bpref import utils
 from rldev.logging import DummyLogger
+from rldev.utils.env import get_success_info
+
 
 class PbRLAgent(Agent, metaclass=ABCMeta):
 
@@ -30,7 +32,7 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
                      test_env,
                      policy)
 
-    self._buffer = buffer
+    self._buffer = buffer(self)
     self._reward_model = reward_model
     self._n_envs = n_envs = self._env.num_envs
 
@@ -93,20 +95,22 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
 
   def train(self, epoch_length):
 
+    env = self._env
     for _ in range(epoch_length // self._n_envs):
       self.process_episodic_records()
 
       # sample action for data collection
       if self._step < self.config.num_seed_steps:
-        action = np.array([self._env.action_space.sample() for _ in range(self._env.num_envs)])
+        action = np.array([env.action_space.sample() for _ in range(env.num_envs)])
       else:
         with utils.eval_mode(self._policy):
-          action = self._policy.act(self.obs, sample=True)
-      assert action.shape == (1, 4)
+          obs = env.to_box_observation(self.obs)
+          action = self._policy.act(obs, sample=True)
+      assert action.ndim == 2
       self.optimize_reward_model()
       self.optimize_policy()
 
-      maybe_next_observation, reward, self._done, info = self._env.step(action)
+      maybe_next_observation, reward, self._done, info = env.step(action)
       # As the VecEnv resets automatically, new_obs is already the
       # first observation of the next episode
       next_observation = copy.deepcopy(maybe_next_observation)
@@ -115,18 +119,21 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
         if done and terminal is not None:
           next_observation[i] = terminal
 
-      pseudo_reward = self._reward_model.r_hat(np.concatenate([self.obs, action], axis=-1))[..., 0]
+      obs = env.to_box_observation(self.obs)
+      pseudo_reward = self._reward_model.r_hat(np.concatenate([obs, action], axis=-1))[..., 0]
 
       # allow infinite bootstrap
       # self._done = float(self._done)
       done_no_max = copy.deepcopy(self._done)
       for i in range(self._n_envs):
-        if self._episode_step[i] + 1 == self._env._max_episode_steps:
+        if self._episode_step[i] + 1 == env._max_episode_steps:
           done_no_max[i] = False
       done_no_max = done_no_max.astype(float)
       
       for i in range(self._n_envs):
-        self._episode_success[i] = max(self._episode_success[i], info[i]["success"])
+        success = get_success_info(info[i])
+        if success is not None:
+          self._episode_success[i] = max(self._episode_success[i], success)
         self._episode_pseudo_return[i] += pseudo_reward
         self._episode_return[i] += reward
         self._episode_step[i] += 1
@@ -190,6 +197,7 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
                      next_observation, 
                      done,
                      done_no_max)
+    observation = self._env.to_box_observation(observation)
     self._reward_model.add_data(observation, 
                                 action, 
                                 reward, 
@@ -202,9 +210,9 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
     episode_successes = []
 
     env = self._test_env
-    
     while len(episode_returns) < episodes:
       obs = env.reset()
+      obs = env.to_box_observation(obs)
       done = np.zeros((self._n_envs,))
       episode_success = np.zeros((self._n_envs,))
       episode_return = np.zeros((self._n_envs,))
@@ -213,10 +221,13 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
         with utils.eval_mode(self._policy):
           action = self._policy.act(obs, sample=False)
         obs, reward, done, info = env.step(action)
+        obs = env.to_box_observation(obs)
         for i in range(self._n_envs):
           if not done[i]:
             episode_return[i] += reward[i]
-            episode_success[i] = max(episode_success[i], info[i]["success"])
+            success = get_success_info(info[i])
+            if success is not None:
+              episode_success[i] = max(episode_success[i], success)
       
       episode_returns.extend(episode_return)
       episode_successes.extend(episode_success)

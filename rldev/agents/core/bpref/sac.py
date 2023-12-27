@@ -1,11 +1,17 @@
+
+import math
 import numpy as np
 import torch
-import math
 import torch.nn.functional as F
+
+from overrides import overrides
+from pathlib import Path
+from torch import distributions as pyd
+from torch import nn
+
+from rldev.agents.core import Node
 from rldev.agents.core.bpref import utils
 
-from torch import nn
-from torch import distributions as pyd
 
 class TanhTransform(pyd.transforms.Transform):
     domain = pyd.constraints.real
@@ -146,15 +152,15 @@ def compute_state_entropy(obs, full_obs, k):
         state_entropy = knn_dists
     return state_entropy.unsqueeze(1)
 
-class SACAgent:
+class SACPolicy(Node):
     """SAC algorithm."""
-    def __init__(self, obs_dim, action_dim, action_range, device, critic_cfg,
+    def __init__(self, agent, obs_dim, action_dim, action_range, device, critic_cfg,
                  actor_cfg, discount, init_temperature, alpha_lr, alpha_betas,
                  actor_lr, actor_betas, actor_update_frequency, critic_lr,
                  critic_betas, critic_tau, critic_target_update_frequency,
                  batch_size, learnable_temperature,
                  normalize_state_entropy=True):
-        super().__init__()
+        super().__init__(agent)
 
         self.action_range = action_range
         self.device = torch.device(device)
@@ -320,27 +326,11 @@ class SACAgent:
         critic_loss.backward()
         self.critic_optimizer.step()
     
-    def save(self, model_dir, step):
-        torch.save(
-            self.actor.state_dict(), '%s/actor_%s.pt' % (model_dir, step)
-        )
-        torch.save(
-            self.critic.state_dict(), '%s/critic_%s.pt' % (model_dir, step)
-        )
-        torch.save(
-            self.critic_target.state_dict(), '%s/critic_target_%s.pt' % (model_dir, step)
-        )
-        
-    def load(self, model_dir, step):
-        self.actor.load_state_dict(
-            torch.load('%s/actor_%s.pt' % (model_dir, step))
-        )
-        self.critic.load_state_dict(
-            torch.load('%s/critic_%s.pt' % (model_dir, step))
-        )
-        self.critic_target.load_state_dict(
-            torch.load('%s/critic_target_%s.pt' % (model_dir, step))
-        )
+    @overrides
+    def save(self, dir: Path): ...
+
+    @overrides
+    def load(self, dir: Path): ...
     
     def update_actor_and_alpha(self, obs, logger, step, print_flag=False):
         dist = self.actor(obs)
