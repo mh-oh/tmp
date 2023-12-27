@@ -10,7 +10,7 @@ For a quick start you can simply type the commands below.
 ~$ git clone https://github.com/mh-oh/rldev.git
 ~$ cd rldev
 ~$ conda create -n rldev python=3.8
-~$ conda activate
+~$ conda activate rldev
 ~$ pip install torch==1.8.0+cu111 -f https://download.pytorch.org/whl/torch_stable.html
 ~$ pip install gym==0.17.1
 ~$ pip install scikit-learn
