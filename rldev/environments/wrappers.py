@@ -1,6 +1,9 @@
 
 import gym
 import gym.spaces as spaces
+import gymnasium
+
+from gymnasium.utils.step_api_compatibility import convert_to_done_step_api
 
 
 class BoxObservation(gym.wrappers.FlattenObservation):
@@ -30,3 +33,20 @@ class SuccessInfo(gym.Wrapper):
     if "is_success" in info:
       info["success"] = info["is_success"]
     return *step, info
+
+
+class GymApi(gymnasium.Wrapper):
+
+  def __init__(self, env):
+    super().__init__(env)
+  
+  def reset(self):
+    observation, info = super().reset()
+    return observation
+  
+  def step(self, action):
+    step_return = super().step(action)
+    return convert_to_done_step_api(step_return)
+
+  def seed(self, seed=None):
+    ...

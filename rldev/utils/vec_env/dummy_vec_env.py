@@ -4,6 +4,7 @@ import numpy as np
 from gym import spaces
 
 from . import VecEnv
+from rldev.utils import gym_types
 
 
 class DummyVecEnv(VecEnv):
@@ -22,7 +23,7 @@ class DummyVecEnv(VecEnv):
     obs_space = env.observation_space
 
     self.dummy_env = env
-    if isinstance(obs_space, spaces.Dict):
+    if isinstance(obs_space, gym_types.Dict):
       assert isinstance(obs_space.spaces, OrderedDict)
       subspaces = obs_space.spaces
       if env.compute_reward is not None:

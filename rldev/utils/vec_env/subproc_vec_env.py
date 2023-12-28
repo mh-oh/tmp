@@ -2,6 +2,7 @@ from multiprocessing import Process, Pipe
 
 import numpy as np
 
+from rldev.utils import gym_types
 from rldev.utils.vec_env import VecEnv, CloudpickleWrapper
 from gym import spaces
 
@@ -70,7 +71,7 @@ class SubprocVecEnv(VecEnv):
 
     self.goal_env = False
     self.goal_keys = None
-    if isinstance(observation_space, spaces.Dict):
+    if isinstance(observation_space, gym_types.Dict):
       dummy_env = env_fns[0]()
       self.dummy_env = dummy_env
       if dummy_env.compute_reward is not None:

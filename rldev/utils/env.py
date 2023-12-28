@@ -3,9 +3,9 @@ import numpy as np
 
 from collections import OrderedDict
 from copy import deepcopy
-from gym import spaces
 from typing import *
 
+from rldev.utils import gym_types
 from rldev.utils.structure import AttrDict
 
 
@@ -93,53 +93,53 @@ class DictExperience:
   done: np.ndarray
 
 
-def action_spec(space: spaces.Space):
-  if isinstance(space, spaces.Box):
+def action_spec(space: gym_types.Space):
+  if isinstance(space, gym_types.Box):
     return Spec(space.shape, space.dtype)
   raise NotImplementedError()
 
 
-def observation_spec(space: spaces.Space):
-  if isinstance(space, spaces.Box):
+def observation_spec(space: gym_types.Space):
+  if isinstance(space, gym_types.Box):
     return Spec(space.shape, space.dtype)
-  if isinstance(space, spaces.Dict):
+  if isinstance(space, gym_types.Dict):
     return OrderedDict(
       (key, observation_spec(subspace)) 
         for (key, subspace) in space.spaces.items())
   raise NotImplementedError()
 
 
-def flatten_space(space: spaces.Space):
+def flatten_space(space: gym_types.Space):
   
   low, high, dtype = [], [], []
   def append(x):
     low.append(x.low); high.append(x.high); dtype.append(x.dtype)
 
   for key, subspace in space.spaces.items():
-    if isinstance(subspace, spaces.Dict):
+    if isinstance(subspace, gym_types.Dict):
       subspace = flatten_space(subspace)
     else:
-      if not isinstance(subspace, spaces.Box):
+      if not isinstance(subspace, gym_types.Box):
         raise ValueError()
       if len(subspace.shape) > 1:
         raise ValueError()
     append(subspace)
   
-  return spaces.Box(low=np.concatenate(low),
+  return gym_types.Box(low=np.concatenate(low),
                     high=np.concatenate(high),
                     dtype=np.result_type(*dtype))
 
 
-def flatten_observation(space: spaces.Dict, 
+def flatten_observation(space: gym_types.Dict, 
                         observation: Dict[str, Any]):
 
   xs = []
   for key, subspace in space.spaces.items():
     x = observation[key]
-    if isinstance(subspace, spaces.Dict):
+    if isinstance(subspace, gym_types.Dict):
       x = flatten_observation(subspace, x)
     else:
-      if not isinstance(subspace, spaces.Box):
+      if not isinstance(subspace, gym_types.Box):
         raise ValueError()
       if len(subspace.shape) > 1:
         raise ValueError()

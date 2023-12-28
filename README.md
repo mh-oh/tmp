@@ -23,6 +23,9 @@ For a quick start you can simply type the commands below.
 ~$ pip install overrides
 ~$ pip install scikit-image
 ~$ pip install wandb
+~$ pip install munch
+~$ pip install gymnasium
+~$ pip install gymnasium-robotics
 ```
 
 ``rldev`` requires you to have Mujoco binaries and a license key.
@@ -41,6 +44,11 @@ DDPG and HER are based on the version introduced by OpenAI ``baselines`` ([paper
 ### DDPG+HER with sparse rewards on FetchPush-v1
 ```console
 ~$ python experiments/fetch/ddpg+her.py --run=fetch-push.seed=1 --env=FetchPush-v1 --num_envs=8 --seed=1
+```
+
+### DDPG+HER with dense rewards on PointMaze_UMaze-v3
+```console
+~$ python experiments/maze/ddpg+her.py --run=u-maze-dense.seed=1 --env=PointMaze_UMazeDense-v3 --num_envs=8 --seed=1
 ```
 
 ### DDPG+HER on button-press-v2

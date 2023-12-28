@@ -5,6 +5,7 @@ import time
 
 from typing import *
 
+from rldev.utils import gym_types
 from rldev.utils.structure import AttrDict
 from rldev.utils.seeding import set_global_seeds
 from rldev.utils.vec_env import SubprocVecEnv, DummyVecEnv
@@ -41,7 +42,6 @@ class EnvModule:
       env_list = [make_env_by_id(env, seed, i, episode_life) for i in range(num_envs)]
     else:
       sample_env = make_env(env, seed, 0)()
-      assert isinstance(sample_env, gym.core.Env), "Only gym environments supported for now!"
       env_list = [make_env(env, seed, i) for i in range(num_envs)]
 
     if num_envs == 1:
@@ -54,11 +54,11 @@ class EnvModule:
     self.observation_space = sample_env.observation_space
     self.action_space = sample_env.action_space
 
-    if isinstance(self.action_space, gym.spaces.Discrete):
+    if isinstance(self.action_space, gym_types.Discrete):
       self.action_dim = self.action_space.n
       self.max_action = None
     else:
-      assert isinstance(self.action_space, gym.spaces.Box), "Only Box/Discrete actions supported for now!"
+      assert isinstance(self.action_space, gym_types.Box), "Only Box/Discrete actions supported for now!"
       self.action_dim = self.action_space.shape[0]
       self.max_action = self.action_space.high[0]
       assert np.allclose(self.action_space.high,
@@ -67,7 +67,7 @@ class EnvModule:
     self.goal_env = False
     self.goal_dim = 0
 
-    if isinstance(self.observation_space, gym.spaces.Dict):
+    if isinstance(self.observation_space, gym_types.Dict):
       if goal_modalities[0] in self.observation_space.spaces:
         self.goal_env = True
         self.compute_reward = sample_env.compute_reward
