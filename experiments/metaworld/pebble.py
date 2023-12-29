@@ -45,10 +45,10 @@ config.device = 'cuda'
 config.log_every_n_steps = 3000
 config.log_save_tb = True
 config.save_video = False
-config.seed = 1
-config.env = 'button-press-v2'
-config.gradient_update = 1
-config.run = 'buttonpresh'
+config.seed = 2
+config.env = 'push-v2'
+config.gradient_update = 2
+config.run = 'push.seed=2'
 
 config.policy = {}
 config.policy.name = 'sac'
@@ -88,7 +88,38 @@ config.actor.kwargs.log_std_bounds = [-5, 2]
 
 
 from experiments.metaworld.ddpg import BoxGoalEnv
+
 class ButtonPressV2(BoxGoalEnv):
+
+  @overrides
+  def index(self, key):
+
+    shape = self._box_observation_space.shape
+    dim = np.prod(shape)
+    if key == "desired_goal":
+      return [36, 37, 38]
+    elif key == "achieved_goal":
+      return [4, 5, 6]
+    elif key == "observation":
+      return np.delete(
+        np.arange(dim).reshape(shape), self.index("desired_goal"))
+
+class ReachV2(BoxGoalEnv):
+
+  @overrides
+  def index(self, key):
+
+    shape = self._box_observation_space.shape
+    dim = np.prod(shape)
+    if key == "desired_goal":
+      return [36, 37, 38]
+    elif key == "achieved_goal":
+      return [4, 5, 6]
+    elif key == "observation":
+      return np.delete(
+        np.arange(dim).reshape(shape), self.index("desired_goal"))
+
+class PushV2(BoxGoalEnv):
 
   @overrides
   def index(self, key):
@@ -118,8 +149,12 @@ def main(cfg):
     def _max_episode_steps(self):
       return self.envs[0]._max_episode_steps
   
-  env = DummyVecEnv([lambda: ButtonPressV2(utils.make_metaworld_env(cfg))])
-  test_env = DummyVecEnv([lambda: ButtonPressV2(utils.make_metaworld_env(cfg))])
+  cls = {"button-press-v2": ButtonPressV2,
+         "reach-v2": ReachV2,
+         "push-v2": PushV2,
+         }[cfg.env]
+  env = DummyVecEnv([lambda: cls(utils.make_metaworld_env(cfg))])
+  test_env = DummyVecEnv([lambda: cls(utils.make_metaworld_env(cfg))])
 
   buffer = (
     lambda agent:
