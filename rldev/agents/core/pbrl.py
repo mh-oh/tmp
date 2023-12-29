@@ -197,6 +197,10 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
                      next_observation, 
                      done,
                      done_no_max)
+    self._reward_model.add(observation,
+                           action,
+                           reward,
+                           done)
     observation = self._env.to_box_observation(observation)
     self._reward_model.add_data(observation, 
                                 action, 

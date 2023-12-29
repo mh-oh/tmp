@@ -4,6 +4,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 import time
 
+from typing import *
+
+from rldev.utils.env import observation_spec, action_spec, container, dict_container
+
 
 device = 'cuda'
 
@@ -75,9 +79,14 @@ def compute_smallest_dist(obs, full_obs):
 
 class RewardModel:
 
-  def __init__(self, ds, da, 
+  def __init__(self, 
+               observation_space, 
+               action_space, 
+               max_episode_steps,
+               aligned_goals,
+               ds, da, 
                 ensemble_size=3, lr=3e-4, mb_size = 128, size_segment=1, 
-                env_maker=None, max_size=100, activation='tanh', capacity=5e5,  
+                env_maker=None, max_episodes=100, activation='tanh', capacity=5e5,  
                 large_batch=1, label_margin=0.0, 
                 teacher_beta=-1, teacher_gamma=1, 
                 teacher_eps_mistake=0, 
@@ -92,7 +101,7 @@ class RewardModel:
     self.ensemble = []
     self.paramlst = []
     self.opt = None
-    self.max_size = max_size
+    self.max_episodes = max_episodes
     self.activation = activation
     self.size_segment = size_segment
     
@@ -123,7 +132,10 @@ class RewardModel:
     
     self.label_margin = label_margin
     self.label_target = 1 - 2*self.label_margin
-  
+
+    ####
+    self.aligned_goals = aligned_goals
+
   def softXEnt_loss(self, input, target):
     logprobs = torch.nn.functional.log_softmax (input, dim = 1)
     return  -(target * logprobs).sum() / input.shape[0]
@@ -149,7 +161,14 @@ class RewardModel:
       self.paramlst.extend(model.parameters())
         
     self.opt = torch.optim.Adam(self.paramlst, lr = self.lr)
-          
+  
+  def add(self,
+          observation: Dict,
+          action: np.ndarray,
+          reward: np.ndarray,
+          done: np.ndarray):
+    pass
+
   def add_data(self, obs, act, rew, done):
     sa_t = np.concatenate([obs, act], axis=-1)
     r_t = rew
@@ -166,7 +185,7 @@ class RewardModel:
       self.inputs[-1] = np.concatenate([self.inputs[-1], flat_input])
       self.targets[-1] = np.concatenate([self.targets[-1], flat_target])
       # FIFO
-      if len(self.inputs) > self.max_size:
+      if len(self.inputs) > self.max_episodes:
         self.inputs = self.inputs[1:]
         self.targets = self.targets[1:]
       self.inputs.append([])
@@ -178,12 +197,6 @@ class RewardModel:
       else:
         self.inputs[-1] = np.concatenate([self.inputs[-1], flat_input])
         self.targets[-1] = np.concatenate([self.targets[-1], flat_target])
-              
-  def add_data_batch(self, obses, rewards):
-    num_env = obses.shape[0]
-    for index in range(num_env):
-      self.inputs.append(obses[index])
-      self.targets.append(rewards[index])
       
   def get_rank_probability(self, x_1, x_2):
     # get probability x_1 > x_2
@@ -297,34 +310,73 @@ class RewardModel:
     train_inputs = np.array(self.inputs[:max_len])
     train_targets = np.array(self.targets[:max_len])
 
-    batch_index_2 = np.random.choice(max_len, size=mb_size, replace=True)
-    sa_t_2 = train_inputs[batch_index_2] # Batch x T x dim of s&a
-    r_t_2 = train_targets[batch_index_2] # Batch x T x 1
-    
-    batch_index_1 = np.random.choice(max_len, size=mb_size, replace=True)
-    sa_t_1 = train_inputs[batch_index_1] # Batch x T x dim of s&a
-    r_t_1 = train_targets[batch_index_1] # Batch x T x 1
-            
-    sa_t_1 = sa_t_1.reshape(-1, sa_t_1.shape[-1]) # (Batch x T) x dim of s&a
-    r_t_1 = r_t_1.reshape(-1, r_t_1.shape[-1]) # (Batch x T) x 1
-    sa_t_2 = sa_t_2.reshape(-1, sa_t_2.shape[-1]) # (Batch x T) x dim of s&a
-    r_t_2 = r_t_2.reshape(-1, r_t_2.shape[-1]) # (Batch x T) x 1
+    def tmp(train_inputs, train_targets, len_traj, mb_size):
 
-    # Generate time index 
-    time_index = np.array([list(range(i*len_traj,
-                                        i*len_traj+self.size_segment)) for i in range(mb_size)])
-    time_index_2 = np.copy(time_index)
-    if len_traj > self.size_segment:
-      time_index_2 += np.random.choice(len_traj-self.size_segment, size=mb_size, replace=True).reshape(-1,1)
-    time_index_1 = np.copy(time_index)
-    if len_traj > self.size_segment:
-      time_index_1 += np.random.choice(len_traj-self.size_segment, size=mb_size, replace=True).reshape(-1,1)
+      max_len = len(train_inputs)
+      batch_index_2 = np.random.choice(max_len, size=mb_size, replace=True)
+      sa_t_2 = train_inputs[batch_index_2] # Batch x T x dim of s&a
+      r_t_2 = train_targets[batch_index_2] # Batch x T x 1
+      
+      batch_index_1 = np.random.choice(max_len, size=mb_size, replace=True)
+      sa_t_1 = train_inputs[batch_index_1] # Batch x T x dim of s&a
+      r_t_1 = train_targets[batch_index_1] # Batch x T x 1
+              
+      sa_t_1 = sa_t_1.reshape(-1, sa_t_1.shape[-1]) # (Batch x T) x dim of s&a
+      r_t_1 = r_t_1.reshape(-1, r_t_1.shape[-1]) # (Batch x T) x 1
+      sa_t_2 = sa_t_2.reshape(-1, sa_t_2.shape[-1]) # (Batch x T) x dim of s&a
+      r_t_2 = r_t_2.reshape(-1, r_t_2.shape[-1]) # (Batch x T) x 1
+
+      # Generate time index 
+      time_index = np.array([list(range(i*len_traj,
+                                          i*len_traj+self.size_segment)) for i in range(mb_size)])
+      time_index_2 = np.copy(time_index)
+      if len_traj > self.size_segment:
+        time_index_2 += np.random.choice(len_traj-self.size_segment, size=mb_size, replace=True).reshape(-1,1)
+      time_index_1 = np.copy(time_index)
+      if len_traj > self.size_segment:
+        time_index_1 += np.random.choice(len_traj-self.size_segment, size=mb_size, replace=True).reshape(-1,1)
+      
+      sa_t_1 = np.take(sa_t_1, time_index_1, axis=0) # Batch x size_seg x dim of s&a
+      r_t_1 = np.take(r_t_1, time_index_1, axis=0) # Batch x size_seg x 1
+      sa_t_2 = np.take(sa_t_2, time_index_2, axis=0) # Batch x size_seg x dim of s&a
+      r_t_2 = np.take(r_t_2, time_index_2, axis=0) # Batch x size_seg x 1
+              
+      return sa_t_1, sa_t_2, r_t_1, r_t_2
+
+    if not self.aligned_goals:
+      return tmp(train_inputs, train_targets, len_traj, mb_size)
+
+    print(train_inputs.shape)
+    goals = []
+    for episode in train_inputs:
+      goals.append(episode[0, [2, 3]])
+    goals = np.array(goals)
+
+    from sklearn.cluster import DBSCAN
+    cluster = DBSCAN(eps=0.3).fit(goals)
+
+    from rldev.utils.structure import chunk
+    print(cluster.labels_)
+
+    _sa_t_1, _sa_t_2, _r_t_1, _r_t_2 = [], [], [], []
+    labels = set(cluster.labels_)
+    for x in chunk(range(mb_size), len(labels)):
+      n = len(x)
+      gi = labels.pop()
+
+      mask = cluster.labels_ == gi
+      sa_t_1, sa_t_2, r_t_1, r_t_2 = tmp(train_inputs[mask], train_targets[mask], len_traj, n)
+      print(n, len(sa_t_1))
+      _sa_t_1.append(sa_t_1)
+      _sa_t_2.append(sa_t_2)
+      _r_t_1.append(r_t_1)
+      _r_t_2.append(r_t_2)
     
-    sa_t_1 = np.take(sa_t_1, time_index_1, axis=0) # Batch x size_seg x dim of s&a
-    r_t_1 = np.take(r_t_1, time_index_1, axis=0) # Batch x size_seg x 1
-    sa_t_2 = np.take(sa_t_2, time_index_2, axis=0) # Batch x size_seg x dim of s&a
-    r_t_2 = np.take(r_t_2, time_index_2, axis=0) # Batch x size_seg x 1
-            
+    sa_t_1 = np.concatenate(_sa_t_1, axis=0)
+    sa_t_2 = np.concatenate(_sa_t_2, axis=0)
+    r_t_1 = np.concatenate(_r_t_1, axis=0)
+    r_t_2 = np.concatenate(_r_t_2, axis=0)
+
     return sa_t_1, sa_t_2, r_t_1, r_t_2
 
   def put_queries(self, sa_t_1, sa_t_2, labels):
@@ -403,6 +455,7 @@ class RewardModel:
     return sa_t_1, sa_t_2, r_t_1, r_t_2, labels
   
   def kcenter_sampling(self):
+    raise
       
     # get queries
     num_init = self.mb_size*self.large_batch
@@ -437,6 +490,7 @@ class RewardModel:
     return len(labels)
   
   def kcenter_disagree_sampling(self):
+    raise
       
     num_init = self.mb_size*self.large_batch
     num_init_half = int(num_init*0.5)
@@ -480,6 +534,7 @@ class RewardModel:
     return len(labels)
   
   def kcenter_entropy_sampling(self):
+    raise
       
     num_init = self.mb_size*self.large_batch
     num_init_half = int(num_init*0.5)
@@ -538,7 +593,7 @@ class RewardModel:
     return len(labels)
   
   def disagreement_sampling(self):
-      
+    raise
     # get queries
     sa_t_1, sa_t_2, r_t_1, r_t_2 =  self.get_queries(
         mb_size=self.mb_size*self.large_batch)
@@ -558,6 +613,7 @@ class RewardModel:
     return len(labels)
   
   def entropy_sampling(self):
+    raise
     # get queries
     sa_t_1, sa_t_2, r_t_1, r_t_2 =  self.get_queries(
         mb_size=self.mb_size*self.large_batch)

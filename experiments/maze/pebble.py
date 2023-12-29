@@ -27,7 +27,7 @@ config.num_interact = 5000
 config.reward_lr = 0.0003
 config.reward_batch = 50
 config.reward_update = 10
-config.feed_type = 2
+config.feed_type = 0
 config.reset_update = 100
 config.topK = 5
 config.ensemble_size = 3
@@ -48,10 +48,10 @@ config.device = 'cuda'
 config.log_every_n_steps = 3000
 config.log_save_tb = True
 config.save_video = False
-config.seed = 2
-config.env = "PointMaze_UMazeDense-v3"
+config.seed = 1
+config.env = "maze-o"
 config.gradient_update = 2
-config.run = 'maze-u-dense.seed=2'
+config.run = 'maze-o.uniform.seed=1'
 
 config.policy = {}
 config.policy.name = 'sac'
@@ -88,6 +88,20 @@ config.actor.kwargs = {}
 config.actor.kwargs.hidden_depth = 3
 config.actor.kwargs.hidden_dim = 256
 config.actor.kwargs.log_std_bounds = [-5, 2]
+
+
+R = "r"
+G = "g"
+O_MAZE = [[1, 1, 1, 1, 1, 1, 1],
+          [1, G, 0, 0, 0, G, 1],
+          [1, 0, 1, 1, 1, 0, 1],
+          [1, R, 0, 0, 0, G, 1],
+          [1, 1, 1, 1, 1, 1, 1]]
+
+envs = {"maze-u": ("PointMaze_UMaze-v3", (), {}),
+        "maze-u-dense": ("PointMaze_UMazeDense-v3", (), {}),
+        "maze-o": ("PointMaze_UMaze-v3", (), {"maze_map": O_MAZE, "render_mode": "rgb_array"}),
+        "maze-o-dense": ("PointMaze_UMazeDense-v3", (), {"maze_map": O_MAZE})}
 
 
 class DictGoalEnv:
@@ -134,8 +148,11 @@ def main(cfg):
       return self.envs[0].spec.max_episode_steps
 
   from rldev.environments import create_env
-  env = DummyVecEnv([lambda: DictGoalEnv(create_env(cfg.env))])
-  test_env = DummyVecEnv([lambda: DictGoalEnv(create_env(cfg.env))])
+  def make():
+    name, args, kwargs = envs[cfg.env]
+    return create_env(name, *args, **kwargs)
+  env = DummyVecEnv([lambda: DictGoalEnv(make())])
+  test_env = DummyVecEnv([lambda: DictGoalEnv(make())])
 
   buffer = (
     lambda agent:
@@ -158,7 +175,12 @@ def main(cfg):
   cfg.policy.kwargs.actor_cfg = cfg.actor
 
   policy = lambda agent: cfg.policy.cls(agent, **cfg.policy.kwargs)
+  aligned_goals = True
   reward_model = RewardModel(
+      env.observation_space,
+      env.action_space,
+      env._max_episode_steps,
+      aligned_goals,
       env.envs[0].box_observation_space.shape[0],
       env.action_space.shape[0],
       ensemble_size=cfg.ensemble_size,
