@@ -91,7 +91,6 @@ class RewardModel:
         self.ensemble = []
         self.paramlst = []
         self.opt = None
-        self.model = None
         self.max_size = max_size
         self.activation = activation
         self.size_segment = size_segment
@@ -106,17 +105,10 @@ class RewardModel:
         self.construct_ensemble()
         self.inputs = []
         self.targets = []
-        self.raw_actions = []
-        self.img_inputs = []
         self.mb_size = mb_size
         self.origin_mb_size = mb_size
         self.train_batch_size = 128
         self.CEloss = nn.CrossEntropyLoss()
-        self.running_means = []
-        self.running_stds = []
-        self.best_seg = []
-        self.best_label = []
-        self.best_action = []
         self.large_batch = large_batch
         
         # new teacher
