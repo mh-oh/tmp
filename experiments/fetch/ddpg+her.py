@@ -25,8 +25,8 @@ def main(config):
   th.set_num_threads(min(4, config.num_envs))
   th.set_num_interop_threads(min(4, config.num_envs))
 
-  assert gym.envs.registry.env_specs.get(config.env) is not None
-  env = lambda: gym.make(config.env)
+  from rldev.environments import create_env
+  env = lambda: create_env(config.env)
 
   train_env = EnvModule(env, num_envs=config.num_envs, seed=config.seed)
   test_env = EnvModule(env, num_envs=config.num_envs, name='test_env', seed=config.seed + 1138)

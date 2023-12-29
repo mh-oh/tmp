@@ -3,6 +3,7 @@ import numpy as np
 
 from collections import OrderedDict
 from copy import deepcopy
+from gym import spaces
 from typing import *
 
 from rldev.utils import gym_types
@@ -125,7 +126,7 @@ def flatten_space(space: gym_types.Space):
         raise ValueError()
     append(subspace)
   
-  return gym_types.Box(low=np.concatenate(low),
+  return spaces.Box(low=np.concatenate(low),
                     high=np.concatenate(high),
                     dtype=np.result_type(*dtype))
 

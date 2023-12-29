@@ -1,10 +1,9 @@
 
 import numpy as np
-import gym
+import gymnasium
 
 from collections import OrderedDict
 from gym import spaces
-from overrides import overrides
 
 from rldev.agents.core.bpref import utils
 from rldev.buffers.basic import PEBBLEBuffer
@@ -13,7 +12,6 @@ from rldev.agents.core.bpref.reward_model import RewardModel
 from rldev.agents.pebble import PEBBLE
 from rldev.configs import Conf
 from rldev.utils.env import observation_spec, flatten_space, flatten_observation
-
 
 config = Conf()
 
@@ -50,10 +48,10 @@ config.device = 'cuda'
 config.log_every_n_steps = 3000
 config.log_save_tb = True
 config.save_video = False
-config.seed = 1
-config.env = "FetchPushDense-v1"
-config.gradient_update = 1
-config.run = 'fetchpushdense.seed=1'
+config.seed = 2
+config.env = "PointMaze_UMazeDense-v3"
+config.gradient_update = 2
+config.run = 'maze-u-dense.seed=2'
 
 config.policy = {}
 config.policy.name = 'sac'
@@ -133,7 +131,7 @@ def main(cfg):
 
     @property
     def _max_episode_steps(self):
-      return self.envs[0]._max_episode_steps
+      return self.envs[0].spec.max_episode_steps
 
   from rldev.environments import create_env
   env = DummyVecEnv([lambda: DictGoalEnv(create_env(cfg.env))])

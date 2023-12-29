@@ -1,5 +1,6 @@
 
 import gym
+import gymnasium
 import numpy as np
 import time
 
@@ -276,3 +277,23 @@ class FrameStack(gym.Wrapper):
   def _get_ob(self):
     assert len(self.frames) == self.k
     return LazyFrames(list(self.frames))
+
+
+def create_env(name, *args, **kwargs):
+
+  from gym.envs import registry
+  spec = registry.env_specs.get(name)
+  if spec is not None:
+    def make(name):
+      return gym.make(name, *args, **kwargs)
+  else:
+    from gymnasium.envs import registry
+    from rldev.environments.wrappers import GymApi
+    spec = registry.get(name)
+    if spec is not None:
+      def make(name):
+        return GymApi(gymnasium.make(name, *args, **kwargs))
+    else:
+      raise NotImplementedError()
+
+  return make(name)
