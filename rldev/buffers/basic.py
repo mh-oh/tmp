@@ -12,7 +12,7 @@ from typing import *
 from rldev.agents.core import Node, Agent
 from rldev.utils import misc
 from rldev.utils import torch as thu
-from rldev.utils.env import observation_spec, action_spec, Spec, DictExperience
+from rldev.utils.env import *
 from rldev.utils.structure import *
 
 
@@ -93,11 +93,10 @@ class DictBuffer(Base):
     self._infos = [None for _ in range(self._capacity)]
 
   def _container(self, spec):
-    return np.zeros(
-      (self._capacity, self._n_envs, *spec.shape), dtype=spec.dtype)
+    return container((self._capacity, self._n_envs), spec)
 
   def _dict_container(self, spec):
-    return recursive_map(self._container, spec)
+    return dict_container((self._capacity, self._n_envs), spec)
 
   def _recursive_get(self, x, index):
     return recursive_map(lambda x: x[index].copy(), x)
@@ -142,10 +141,10 @@ class DictBuffer(Base):
                0, high=n_envs, size=(len(index),)))
 
     observations = self._recursive_get(self._observations, index)
-    actions = self._actions[index]
+    actions = self._actions[index].copy()
     rewards = self._rewards[index].reshape(size, 1).astype(np.float32)
     next_observations = self._recursive_get(self._next_observations, index)
-    dones = self._dones[index]
+    dones = self._dones[index].copy()
 
     if self._agent._config.get('never_done'):
       dones = np.zeros_like(rewards, dtype=np.float32)
@@ -199,6 +198,79 @@ class EpisodicDictBuffer(DictBuffer):
                      capacity, 
                      observation_space, 
                      action_space)
+
+    capacity, n_envs = self._capacity, self._n_envs
+    self._episode_cursor = np.zeros((n_envs,), dtype=int)
+    self._episode_length = np.zeros((capacity, n_envs), dtype=int)
+    self._episode_starts = np.zeros((capacity, n_envs), dtype=int)
+
+  def add(self,
+          observation,
+          action,
+          reward,
+          next_state,
+          done,
+          trajectory_over,
+          info):
+
+    # When the buffer is full, we rewrite on old episodes. 
+    # When we start to rewrite on an old episode, we want the 
+    # entire old episode to be deleted (and not only the transition 
+    # on which we rewrite). To do this, we set the length of 
+    # the old episode to 0, so it can't be sampled anymore.
+    for i in range(self._n_envs):
+      s = self._episode_starts[self._cursor, i]
+      l = self._episode_length[self._cursor, i]
+      if l > 0:
+        index = np.arange(self._cursor, s + l) % self._capacity
+        self._episode_length[index, i] = 0
+
+    self._episode_starts[self._cursor, :] = np.copy(self._episode_cursor)
+
+    super().add(observation,
+                action,
+                reward,
+                next_state,
+                done,
+                info)
+
+    for i in range(self._n_envs):
+      if trajectory_over[i]:
+        s = self._episode_cursor[i]
+        e = self._cursor
+        if e < s:
+          e += self._capacity
+        index = np.arange(s, e) % self._capacity
+        self._episode_length[index, i] = e - s
+        self._episode_cursor[i] = self._cursor
+
+  def get(self, index):
+
+    observations = self._recursive_get(self._observations, index)
+    actions = self._actions[index].copy()
+    rewards = self._rewards[index].copy()
+    next_observations = self._recursive_get(self._next_observations, index)
+    dones = self._dones[index].copy()
+
+    return DictExperience(observations,
+                          actions,
+                          rewards,
+                          next_observations,
+                          dones)
+
+  def episodes(self):
+    
+    capacity, n_envs = self._capacity, self._n_envs
+    for i in range(n_envs):
+      is_done_episode = self._episode_length[:, i] > 0
+      starts = self._episode_starts[:, i][is_done_episode]
+      length = self._episode_length[:, i][is_done_episode]
+      for start, length in set(zip(starts, length)):
+        yield (np.arange(start, 
+                         start + length) % capacity, i)
+
+  def get_episodes(self):
+    return map(self.get, self.episodes())
 
 
 class PEBBLEBuffer(DictBuffer):

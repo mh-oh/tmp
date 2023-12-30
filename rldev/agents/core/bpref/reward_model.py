@@ -7,7 +7,8 @@ import time
 from typing import *
 
 from rldev.utils.env import observation_spec, action_spec, container, dict_container
-
+from rldev.agents.core import Node, Agent
+from rldev.buffers.basic import EpisodicDictBuffer
 
 device = 'cuda'
 
@@ -77,9 +78,10 @@ def compute_smallest_dist(obs, full_obs):
     total_dists = torch.cat(total_dists)
   return total_dists.unsqueeze(1)
 
-class RewardModel:
+class RewardModel(Node):
 
   def __init__(self, 
+               agent: Agent,
                observation_space, 
                action_space, 
                max_episode_steps,
@@ -92,6 +94,7 @@ class RewardModel:
                 teacher_eps_mistake=0, 
                 teacher_eps_skip=0, 
                 teacher_eps_equal=0):
+    super().__init__(agent)
       
     # train data is trajectories, must process to sa and s..   
     self.ds = ds
@@ -135,6 +138,11 @@ class RewardModel:
 
     ####
     self.aligned_goals = aligned_goals
+    self._buffer = EpisodicDictBuffer(agent,
+                                      agent._env.num_envs,
+                                      (max_episodes + 1) * max_episode_steps,
+                                      observation_space,
+                                      action_space)
 
   def softXEnt_loss(self, input, target):
     logprobs = torch.nn.functional.log_softmax (input, dim = 1)
@@ -166,8 +174,16 @@ class RewardModel:
           observation: Dict,
           action: np.ndarray,
           reward: np.ndarray,
+          next_observation: Dict,
           done: np.ndarray):
-    pass
+
+    self._buffer.add(observation,
+                     action,
+                     reward,
+                     next_observation,
+                     done,
+                     done,
+                     {})
 
   def add_data(self, obs, act, rew, done):
     sa_t = np.concatenate([obs, act], axis=-1)
@@ -310,6 +326,24 @@ class RewardModel:
     train_inputs = np.array(self.inputs[:max_len])
     train_targets = np.array(self.targets[:max_len])
 
+
+    episodes = list(self._buffer.episodes())
+    print(len(episodes), max_len)
+    fn = self.agent._env.to_box_observation
+
+    _inputs, _targets = [], []
+    for index in episodes:
+      episode = self._buffer.get(index)
+      _inputs.append(np.concatenate([fn(episode.observation), episode.action], axis=-1))
+      _targets.append(episode.reward)
+    
+    _inputs = np.stack(_inputs, axis=0)
+    _targets = np.stack(_targets, axis=0)[..., np.newaxis]
+
+    if len(episodes) < self.max_episodes - 1:
+      assert (np.sort(_inputs, axis=0) != np.sort(train_inputs, axis=0)).sum() <= 0
+      assert (np.sort(_targets, axis=0) != np.sort(train_targets, axis=0)).sum() <= 0
+
     def tmp(train_inputs, train_targets, len_traj, mb_size):
 
       max_len = len(train_inputs)
@@ -344,11 +378,10 @@ class RewardModel:
       return sa_t_1, sa_t_2, r_t_1, r_t_2
 
     if not self.aligned_goals:
-      return tmp(train_inputs, train_targets, len_traj, mb_size)
+      return tmp(_inputs, _targets, len_traj, mb_size)
 
-    print(train_inputs.shape)
     goals = []
-    for episode in train_inputs:
+    for episode in _inputs:
       goals.append(episode[0, [2, 3]])
     goals = np.array(goals)
 
@@ -356,16 +389,16 @@ class RewardModel:
     cluster = DBSCAN(eps=0.3).fit(goals)
 
     from rldev.utils.structure import chunk
-    print(cluster.labels_)
 
     _sa_t_1, _sa_t_2, _r_t_1, _r_t_2 = [], [], [], []
     labels = set(cluster.labels_)
+    print(labels)
     for x in chunk(range(mb_size), len(labels)):
       n = len(x)
-      gi = labels.pop()
+      g = labels.pop()
 
-      mask = cluster.labels_ == gi
-      sa_t_1, sa_t_2, r_t_1, r_t_2 = tmp(train_inputs[mask], train_targets[mask], len_traj, n)
+      mask = cluster.labels_ == g
+      sa_t_1, sa_t_2, r_t_1, r_t_2 = tmp(_inputs[mask], _targets[mask], len_traj, n)
       print(n, len(sa_t_1))
       _sa_t_1.append(sa_t_1)
       _sa_t_2.append(sa_t_2)

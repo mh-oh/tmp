@@ -33,7 +33,7 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
                      policy)
 
     self._buffer = buffer(self)
-    self._reward_model = reward_model
+    self._reward_model = reward_model(self)
     self._n_envs = n_envs = self._env.num_envs
 
     # What is this for? Probabily, $K$ in the paper?
@@ -200,6 +200,7 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
     self._reward_model.add(observation,
                            action,
                            reward,
+                           next_observation,
                            done)
     observation = self._env.to_box_observation(observation)
     self._reward_model.add_data(observation, 
