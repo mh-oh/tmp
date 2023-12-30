@@ -93,6 +93,9 @@ class DictExperience:
   next_observation: OrderedDict
   done: np.ndarray
 
+  def __len__(self):
+    return len(self.reward)
+
   def get(self, index):
     
     def get(x):

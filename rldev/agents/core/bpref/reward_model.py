@@ -326,63 +326,60 @@ class RewardModel(Node):
     train_inputs = np.array(self.inputs[:max_len])
     train_targets = np.array(self.targets[:max_len])
 
+    _episodes = np.array(
+      list(self._buffer.get_episodes()), dtype=object)
+    print(_episodes.shape)
 
-    episodes = list(self._buffer.episodes())
-    print(len(episodes), max_len)
-    fn = self.agent._env.to_box_observation
+    x = set(len(episode) for episode in _episodes)
+    if len(x) != 1:
+      raise
+    episode_steps = x.pop()
 
-    _inputs, _targets = [], []
-    for index in episodes:
-      episode = self._buffer.get(index)
-      _inputs.append(np.concatenate([fn(episode.observation), episode.action], axis=-1))
-      _targets.append(episode.reward)
-    
-    _inputs = np.stack(_inputs, axis=0)
-    _targets = np.stack(_targets, axis=0)[..., np.newaxis]
+    def segment(episodes, size):
+      def get(episode):
+        steps = (np.arange(0, self.size_segment) + 
+                 np.random.randint(0, episode_steps - size + 1))
+        return episode.get(steps)
+      return np.array(
+        [get(episode) for episode in episodes], dtype=object)
 
-    if len(episodes) < self.max_episodes - 1:
-      assert (np.sort(_inputs, axis=0) != np.sort(train_inputs, axis=0)).sum() <= 0
-      assert (np.sort(_targets, axis=0) != np.sort(train_targets, axis=0)).sum() <= 0
+    def queries(episodes, batch_size, segment_size):
 
-    def tmp(train_inputs, train_targets, len_traj, mb_size):
+      segments_1 = segment(episodes, size=segment_size)
+      segments_2 = segment(episodes, size=segment_size)
 
-      max_len = len(train_inputs)
-      batch_index_2 = np.random.choice(max_len, size=mb_size, replace=True)
-      sa_t_2 = train_inputs[batch_index_2] # Batch x T x dim of s&a
-      r_t_2 = train_targets[batch_index_2] # Batch x T x 1
-      
-      batch_index_1 = np.random.choice(max_len, size=mb_size, replace=True)
-      sa_t_1 = train_inputs[batch_index_1] # Batch x T x dim of s&a
-      r_t_1 = train_targets[batch_index_1] # Batch x T x 1
-              
-      sa_t_1 = sa_t_1.reshape(-1, sa_t_1.shape[-1]) # (Batch x T) x dim of s&a
-      r_t_1 = r_t_1.reshape(-1, r_t_1.shape[-1]) # (Batch x T) x 1
-      sa_t_2 = sa_t_2.reshape(-1, sa_t_2.shape[-1]) # (Batch x T) x dim of s&a
-      r_t_2 = r_t_2.reshape(-1, r_t_2.shape[-1]) # (Batch x T) x 1
+      assert len(segments_1) == len(segments_2)
+      def batch_index():
+        return np.random.choice(
+          len(segments_1), size=batch_size, replace=True)
 
-      # Generate time index 
-      time_index = np.array([list(range(i*len_traj,
-                                          i*len_traj+self.size_segment)) for i in range(mb_size)])
-      time_index_2 = np.copy(time_index)
-      if len_traj > self.size_segment:
-        time_index_2 += np.random.choice(len_traj-self.size_segment, size=mb_size, replace=True).reshape(-1,1)
-      time_index_1 = np.copy(time_index)
-      if len_traj > self.size_segment:
-        time_index_1 += np.random.choice(len_traj-self.size_segment, size=mb_size, replace=True).reshape(-1,1)
-      
-      sa_t_1 = np.take(sa_t_1, time_index_1, axis=0) # Batch x size_seg x dim of s&a
-      r_t_1 = np.take(r_t_1, time_index_1, axis=0) # Batch x size_seg x 1
-      sa_t_2 = np.take(sa_t_2, time_index_2, axis=0) # Batch x size_seg x dim of s&a
-      r_t_2 = np.take(r_t_2, time_index_2, axis=0) # Batch x size_seg x 1
-              
+      return (segments_1[batch_index()], 
+              segments_2[batch_index()])
+
+    def compat(segments_1, segments_2):
+
+      fn = self.agent._env.to_box_observation
+
+      def _compat(segments):
+        sa_t, r_t = [], []
+        for seg in segments:
+          sa_t.append(np.concatenate([fn(seg.observation), seg.action], axis=-1))
+          r_t.append(seg.reward)
+        return np.stack(sa_t, axis=0), np.stack(r_t, axis=0)[..., np.newaxis]
+
+      sa_t_1, r_t_1 = _compat(segments_1)
+      sa_t_2, r_t_2 = _compat(segments_2)
+
       return sa_t_1, sa_t_2, r_t_1, r_t_2
 
     if not self.aligned_goals:
-      return tmp(_inputs, _targets, len_traj, mb_size)
+      return compat(*queries(_episodes, mb_size, self.size_segment))
 
     goals = []
-    for episode in _inputs:
-      goals.append(episode[0, [2, 3]])
+    for episode in _episodes:
+      y = np.unique(episode.observation["desired_goal"], axis=0)
+      assert len(y) == 1
+      goals.append(y[0])
     goals = np.array(goals)
 
     from sklearn.cluster import DBSCAN
@@ -398,7 +395,7 @@ class RewardModel(Node):
       g = labels.pop()
 
       mask = cluster.labels_ == g
-      sa_t_1, sa_t_2, r_t_1, r_t_2 = tmp(_inputs[mask], _targets[mask], len_traj, n)
+      sa_t_1, sa_t_2, r_t_1, r_t_2 = compat(*queries(_episodes[mask], mb_size, self.size_segment))
       print(n, len(sa_t_1))
       _sa_t_1.append(sa_t_1)
       _sa_t_2.append(sa_t_2)
