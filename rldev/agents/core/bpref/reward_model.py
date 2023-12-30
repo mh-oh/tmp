@@ -116,8 +116,6 @@ class RewardModel(Node):
     self.buffer_full = False
             
     self.construct_ensemble()
-    self.inputs = []
-    self.targets = []
     self.mb_size = mb_size
     self.origin_mb_size = mb_size
     self.train_batch_size = 128
@@ -185,35 +183,6 @@ class RewardModel(Node):
                      done,
                      {})
 
-  def add_data(self, obs, act, rew, done):
-    sa_t = np.concatenate([obs, act], axis=-1)
-    r_t = rew
-    
-    flat_input = sa_t.reshape(1, self.da+self.ds)
-    r_t = np.array(r_t)
-    flat_target = r_t.reshape(1, 1)
-
-    init_data = len(self.inputs) == 0
-    if init_data:
-      self.inputs.append(flat_input)
-      self.targets.append(flat_target)
-    elif done:
-      self.inputs[-1] = np.concatenate([self.inputs[-1], flat_input])
-      self.targets[-1] = np.concatenate([self.targets[-1], flat_target])
-      # FIFO
-      if len(self.inputs) > self.max_episodes:
-        self.inputs = self.inputs[1:]
-        self.targets = self.targets[1:]
-      self.inputs.append([])
-      self.targets.append([])
-    else:
-      if len(self.inputs[-1]) == 0:
-        self.inputs[-1] = flat_input
-        self.targets[-1] = flat_target
-      else:
-        self.inputs[-1] = np.concatenate([self.inputs[-1], flat_input])
-        self.targets[-1] = np.concatenate([self.targets[-1], flat_target])
-      
   def get_rank_probability(self, x_1, x_2):
     # get probability x_1 > x_2
     probs = []
@@ -316,15 +285,6 @@ class RewardModel(Node):
     return np.mean(ensemble_acc)
   
   def get_queries(self, mb_size=20):
-    len_traj, max_len = len(self.inputs[0]), len(self.inputs)
-    img_t_1, img_t_2 = None, None
-    
-    if len(self.inputs[-1]) < len_traj:
-      max_len = max_len - 1
-    
-    # get train traj
-    train_inputs = np.array(self.inputs[:max_len])
-    train_targets = np.array(self.targets[:max_len])
 
     _episodes = np.array(
       list(self._buffer.get_episodes()), dtype=object)

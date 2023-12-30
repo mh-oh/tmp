@@ -202,11 +202,6 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
                            reward,
                            next_observation,
                            done)
-    observation = self._env.to_box_observation(observation)
-    self._reward_model.add_data(observation, 
-                                action, 
-                                reward, 
-                                done)
 
   def test(self,
            episodes: int):
