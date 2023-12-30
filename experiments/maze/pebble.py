@@ -52,7 +52,7 @@ config.seed = 1
 config.env = "maze-o"
 config.gradient_update = 2
 config.run = 'maze-o.uniform.seed=1'
-config.aligned_goals = True
+config.aligned_goals = False
 
 config.policy = {}
 config.policy.name = 'sac'
@@ -93,16 +93,34 @@ config.actor.kwargs.log_std_bounds = [-5, 2]
 
 R = "r"
 G = "g"
-O_MAZE = [[1, 1, 1, 1, 1, 1, 1],
-          [1, G, 0, 0, 0, G, 1],
-          [1, 0, 1, 1, 1, 0, 1],
-          [1, R, 0, 0, 0, G, 1],
-          [1, 1, 1, 1, 1, 1, 1]]
+O_MAZE   = [[1, 1, 1, 1, 1, 1, 1],
+            [1, G, 0, 0, 0, G, 1],
+            [1, 0, 1, 1, 1, 0, 1],
+            [1, R, 0, 0, 0, G, 1],
+            [1, 1, 1, 1, 1, 1, 1]]
+O_MAZE_1 = [[1, 1, 1, 1, 1, 1, 1],
+            [1, G, 0, 0, 0, 0, 1],
+            [1, 0, 1, 1, 1, 0, 1],
+            [1, R, 0, 0, G, 0, 1],
+            [1, 1, 1, 1, 1, 1, 1]]
+O_MAZE_2 = [[1, 1, 1, 1, 1, 1, 1],
+            [1, 0, 0, 0, G, 0, 1],
+            [1, 0, 1, 1, 1, G, 1],
+            [1, R, 0, 0, 0, 0, 1],
+            [1, 1, 1, 1, 1, 1, 1]]
+O_MAZE_3 = [[1, 1, 1, 1, 1, 1, 1],
+            [1, G, 0, 0, 0, 0, 1],
+            [1, 0, 1, 1, 1, G, 1],
+            [1, R, 0, 0, 0, 0, 1],
+            [1, 1, 1, 1, 1, 1, 1]]
 
 envs = {"maze-u": ("PointMaze_UMaze-v3", (), {}),
         "maze-u-dense": ("PointMaze_UMazeDense-v3", (), {}),
         "maze-o": ("PointMaze_UMaze-v3", (), {"maze_map": O_MAZE, "render_mode": "rgb_array"}),
-        "maze-o-dense": ("PointMaze_UMazeDense-v3", (), {"maze_map": O_MAZE})}
+        "maze-o-dense": ("PointMaze_UMazeDense-v3", (), {"maze_map": O_MAZE}),
+        "maze-o-3": ("PointMaze_UMaze-v3", (), {"maze_map": O_MAZE_3}),
+        "maze-o-3-dense": ("PointMaze_UMazeDense-v3", (), {"maze_map": O_MAZE_3}),
+        }
 
 
 class DictGoalEnv:
