@@ -54,6 +54,7 @@ config.seed = 1
 config.env = "FetchPushDense-v1"
 config.gradient_update = 1
 config.run = 'fetchpushdense.seed=1'
+config.aligned_goals = False
 
 config.policy = {}
 config.policy.name = 'sac'
@@ -160,21 +161,27 @@ def main(cfg):
   cfg.policy.kwargs.actor_cfg = cfg.actor
 
   policy = lambda agent: cfg.policy.cls(agent, **cfg.policy.kwargs)
-  reward_model = RewardModel(
-      env.envs[0].box_observation_space.shape[0],
-      env.action_space.shape[0],
-      ensemble_size=cfg.ensemble_size,
-      size_segment=cfg.segment,
-      activation=cfg.activation, 
-      lr=cfg.reward_lr,
-      mb_size=cfg.reward_batch, 
-      large_batch=cfg.large_batch, 
-      label_margin=cfg.label_margin, 
-      teacher_beta=cfg.teacher_beta, 
-      teacher_gamma=cfg.teacher_gamma, 
-      teacher_eps_mistake=cfg.teacher_eps_mistake, 
-      teacher_eps_skip=cfg.teacher_eps_skip, 
-      teacher_eps_equal=cfg.teacher_eps_equal)
+  reward_model = (
+    lambda agent:
+      RewardModel(agent,
+                  env.observation_space,
+                  env.action_space,
+                  env._max_episode_steps,
+                  config.aligned_goals,
+                  env.envs[0].box_observation_space.shape[0],
+                  env.action_space.shape[0],
+                  ensemble_size=cfg.ensemble_size,
+                  size_segment=cfg.segment,
+                  activation=cfg.activation, 
+                  lr=cfg.reward_lr,
+                  mb_size=cfg.reward_batch, 
+                  large_batch=cfg.large_batch, 
+                  label_margin=cfg.label_margin, 
+                  teacher_beta=cfg.teacher_beta, 
+                  teacher_gamma=cfg.teacher_gamma, 
+                  teacher_eps_mistake=cfg.teacher_eps_mistake, 
+                  teacher_eps_skip=cfg.teacher_eps_skip, 
+                  teacher_eps_equal=cfg.teacher_eps_equal))
 
   agent = PEBBLE(cfg,
                  env,
