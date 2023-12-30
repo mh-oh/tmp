@@ -7,7 +7,7 @@ from gym import spaces
 from typing import *
 
 from rldev.utils import gym_types
-from rldev.utils.structure import AttrDict
+from rldev.utils.structure import AttrDict, recursive_map
 
 
 def flatten_state(state, modalities=['observation', 'desired_goal']):
@@ -93,6 +93,26 @@ class DictExperience:
   next_observation: OrderedDict
   done: np.ndarray
 
+  def __len__(self):
+    return len(self.reward)
+
+  def get(self, index):
+    
+    def get(x):
+      return x[index].copy()
+    
+    observations = recursive_map(get, self.observation)
+    actions = get(self.action)
+    rewards = get(self.reward)
+    next_observations = recursive_map(get, self.next_observation)
+    dones = get(self.done)
+
+    return DictExperience(observations,
+                          actions,
+                          rewards,
+                          next_observations,
+                          dones)
+
 
 def action_spec(space: gym_types.Space):
   if isinstance(space, gym_types.Box):
@@ -108,6 +128,15 @@ def observation_spec(space: gym_types.Space):
       (key, observation_spec(subspace)) 
         for (key, subspace) in space.spaces.items())
   raise NotImplementedError()
+
+
+def container(size, spec):
+  return np.zeros((*size, *spec.shape), dtype=spec.dtype)
+
+
+def dict_container(size, spec):
+  return recursive_map(
+    lambda spec: container(size, spec), spec)
 
 
 def flatten_space(space: gym_types.Space):

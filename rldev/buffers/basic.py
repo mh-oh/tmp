@@ -12,7 +12,7 @@ from typing import *
 from rldev.agents.core import Node, Agent
 from rldev.utils import misc
 from rldev.utils import torch as thu
-from rldev.utils.env import observation_spec, action_spec, Spec, DictExperience
+from rldev.utils.env import *
 from rldev.utils.structure import *
 
 
@@ -83,22 +83,23 @@ class DictBuffer(Base):
                      capacity, 
                      observation_space, 
                      action_space)
-
     self._capacity = max(capacity // n_envs, 1)
-    leading_shape = (self._capacity, self._n_envs)
 
-    def container(spec):
-      return np.zeros(
-        (*leading_shape, *spec.shape), dtype=spec.dtype)
-    def dict_container(spec):
-      return recursive_map(container, spec)
-
-    self._observations = dict_container(self._observation_spec)
-    self._actions = container(self._action_spec)
-    self._rewards = container(Spec((), float))
-    self._next_observations = dict_container(self._observation_spec)
-    self._dones = container(Spec((), bool))
+    self._observations = self._dict_container(self._observation_spec)
+    self._actions = self._container(self._action_spec)
+    self._rewards = self._container(Spec((), float))
+    self._next_observations = self._dict_container(self._observation_spec)
+    self._dones = self._container(Spec((), bool))
     self._infos = [None for _ in range(self._capacity)]
+
+  def _container(self, spec):
+    return container((self._capacity, self._n_envs), spec)
+
+  def _dict_container(self, spec):
+    return dict_container((self._capacity, self._n_envs), spec)
+
+  def _recursive_get(self, x, index):
+    return recursive_map(lambda x: x[index].copy(), x)
 
   def add(self,
           observation: Dict,
@@ -139,14 +140,11 @@ class DictBuffer(Base):
              np.random.randint(
                0, high=n_envs, size=(len(index),)))
 
-    def get(x, index):
-      return recursive_map(lambda x: x[index], x)
-
-    observations = get(self._observations, index)
-    actions = self._actions[index]
+    observations = self._recursive_get(self._observations, index)
+    actions = self._actions[index].copy()
     rewards = self._rewards[index].reshape(size, 1).astype(np.float32)
-    next_observations = get(self._next_observations, index)
-    dones = self._dones[index]
+    next_observations = self._recursive_get(self._next_observations, index)
+    dones = self._dones[index].copy()
 
     if self._agent._config.get('never_done'):
       dones = np.zeros_like(rewards, dtype=np.float32)
@@ -177,7 +175,7 @@ class DictBuffer(Base):
              {})
 
 
-class PEBBLEBuffer(DictBuffer):
+class EpisodicDictBuffer(DictBuffer):
 
   @overrides
   def save(self, dir: Path): ...
@@ -201,17 +199,104 @@ class PEBBLEBuffer(DictBuffer):
                      observation_space, 
                      action_space)
 
-    self._capacity = max(capacity // n_envs, 1)
-    leading_shape = (self._capacity, self._n_envs)
+    capacity, n_envs = self._capacity, self._n_envs
+    self._episode_cursor = np.zeros((n_envs,), dtype=int)
+    self._episode_length = np.zeros((capacity, n_envs), dtype=int)
+    self._episode_starts = np.zeros((capacity, n_envs), dtype=int)
 
-    def container(spec):
-      return np.zeros(
-        (*leading_shape, *spec.shape), dtype=spec.dtype)
+  def add(self,
+          observation,
+          action,
+          reward,
+          next_state,
+          done,
+          trajectory_over,
+          info):
 
-    self._dones_no_max = container(Spec((), bool))
+    # When the buffer is full, we rewrite on old episodes. 
+    # When we start to rewrite on an old episode, we want the 
+    # entire old episode to be deleted (and not only the transition 
+    # on which we rewrite). To do this, we set the length of 
+    # the old episode to 0, so it can't be sampled anymore.
+    for i in range(self._n_envs):
+      s = self._episode_starts[self._cursor, i]
+      l = self._episode_length[self._cursor, i]
+      if l > 0:
+        index = np.arange(self._cursor, s + l) % self._capacity
+        self._episode_length[index, i] = 0
 
-  def recursive_get(self, x, index):
-    return recursive_map(lambda x: x[index].copy(), x)
+    self._episode_starts[self._cursor, :] = np.copy(self._episode_cursor)
+
+    super().add(observation,
+                action,
+                reward,
+                next_state,
+                done,
+                info)
+
+    for i in range(self._n_envs):
+      if trajectory_over[i]:
+        s = self._episode_cursor[i]
+        e = self._cursor
+        if e < s:
+          e += self._capacity
+        index = np.arange(s, e) % self._capacity
+        self._episode_length[index, i] = e - s
+        self._episode_cursor[i] = self._cursor
+
+  def get(self, index):
+
+    observations = self._recursive_get(self._observations, index)
+    actions = self._actions[index].copy()
+    rewards = self._rewards[index].copy()
+    next_observations = self._recursive_get(self._next_observations, index)
+    dones = self._dones[index].copy()
+
+    return DictExperience(observations,
+                          actions,
+                          rewards,
+                          next_observations,
+                          dones)
+
+  def episodes(self):
+    
+    capacity, n_envs = self._capacity, self._n_envs
+    for i in range(n_envs):
+      is_done_episode = self._episode_length[:, i] > 0
+      starts = self._episode_starts[:, i][is_done_episode]
+      length = self._episode_length[:, i][is_done_episode]
+      for start, length in set(zip(starts, length)):
+        yield (np.arange(start, 
+                         start + length) % capacity, i)
+
+  def get_episodes(self):
+    return map(self.get, self.episodes())
+
+
+class PEBBLEBuffer(DictBuffer):
+
+  @overrides
+  def save(self, dir: Path): ...
+
+  @overrides
+  def load(self, dir: Path): ...
+
+  @overrides
+  def __len__(self):
+    return super().__len__()
+
+  def __init__(self,
+               agent: Agent,
+               n_envs: int,
+               capacity: int,
+               observation_space: spaces.Dict,
+               action_space: spaces.Dict):
+    super().__init__(agent,
+                     n_envs, 
+                     capacity, 
+                     observation_space, 
+                     action_space)
+    self._dones_no_max = self._container(Spec((), bool))
 
   def add(self,
           observation: Dict,
@@ -221,25 +306,13 @@ class PEBBLEBuffer(DictBuffer):
           done: np.ndarray,
           done_no_max: np.ndarray):
 
-    def store(to, what):
-      to[self._cursor] = np.copy(what)
-
-    store(self._actions, action)
-    store(self._rewards, reward)
-    store(self._dones, not done)
-    store(self._dones_no_max, not done_no_max)
-
-    def store(to, what):
-      def fn(x, y):
-        x[self._cursor, ...] = np.copy(y)
-      recursive_map(fn, to, what)
-
-    store(self._observations, observation)
-    store(self._next_observations, next_observation)
-
-    self._cursor += 1
-    if self._cursor == self._capacity:
-      self._full, self._cursor = True, 0
+    self._dones_no_max[self._cursor] = np.copy(not done_no_max)
+    super().add(observation,
+                action,
+                reward,
+                next_observation,
+                not done,
+                {})
 
   @overrides
   def sample(self, size: int):
@@ -252,10 +325,10 @@ class PEBBLEBuffer(DictBuffer):
              np.random.randint(
                0, high=n_envs, size=(len(index),)))
 
-    observations = self.recursive_get(self._observations, index)
+    observations = self._recursive_get(self._observations, index)
     actions = self._actions[index]
     rewards = self._rewards[index].reshape(size, 1).astype(np.float32)
-    next_observations = self.recursive_get(self._next_observations, index)
+    next_observations = self._recursive_get(self._next_observations, index)
     not_dones = self._dones[index].reshape(size, 1).astype(np.float32)
     not_dones_no_max = self._dones_no_max[index].reshape(size, 1).astype(np.float32)
     
@@ -290,7 +363,7 @@ class PEBBLEBuffer(DictBuffer):
     fun = env.to_box_observation
 
     index = self._every_indices
-    every_observations = self.recursive_get(self._observations, index)
+    every_observations = self._recursive_get(self._observations, index)
     every_observations = fun(every_observations)
     every_observations = thu.torch(every_observations)
 
@@ -307,7 +380,7 @@ class PEBBLEBuffer(DictBuffer):
     env = self.agent._env
 
     index = self._every_indices
-    observations = self.recursive_get(self._observations, index)
+    observations = self._recursive_get(self._observations, index)
     actions = self._actions[index]
 
     end = len(actions)
@@ -324,7 +397,7 @@ class PEBBLEBuffer(DictBuffer):
       
       index = misc.index[i  * batch_size:last]
 
-      observation = self.recursive_get(observations, index)
+      observation = self._recursive_get(observations, index)
       observation = env.to_box_observation(observation)
       action = actions[index]
 

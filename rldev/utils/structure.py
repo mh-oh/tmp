@@ -219,3 +219,13 @@ class ArrDict:
     elif isinstance(data, ArrDict):
       raise NotImplementedError("which rules should we follow?")
 
+
+def batchify(length, size):
+  for i in range(0, length, size):
+    yield i, min(i + size, length)
+
+
+def chunk(sequence, n):
+  k, m = divmod(len(sequence), n)
+  return (sequence[i*k+min(i, m):(i+1)*k+min(i+1, m)] for i in range(n))
+

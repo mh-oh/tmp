@@ -59,7 +59,7 @@ class HindsightBuffer(DictBuffer):
         e = self._cursor
         if e < s:
           e += self._capacity
-        index = np.arange(s, e) % self._cursor
+        index = np.arange(s, e) % self._capacity
         self._episode_length[index, i] = e - s
         self._episode_cursor[i] = self._cursor
 
