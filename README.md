@@ -26,6 +26,7 @@ For a quick start you can simply type the commands below.
 ~$ pip install munch
 ~$ pip install gymnasium
 ~$ pip install gymnasium-robotics
+~$ pip install ml_collections
 ```
 
 ``rldev`` requires you to have Mujoco binaries and a license key.
@@ -40,6 +41,37 @@ See [here](https://github.com/openai/mujoco-py#obtaining-the-binaries-and-licens
 DDPG and HER are based on the version introduced by OpenAI ``baselines`` ([paper](https://arxiv.org/abs/1802.09464), [github](https://github.com/openai/baselines)).
 
 ## Getting started
+
+### DDPG+HER
+```console
+~$ python experiments/ddpg+her.py <config> --run=<run> --env=<environment> --num_envs=8 --seed=1
+```
+* ``<config>`` Use ddpg-her for Fetch environments.
+* ``<run>`` This will be a name of wandb run.
+* ``<environment>`` Use one of the followings:
+  * fetch-push ✔️
+  * fetch-push-dense ✔️
+  * fetch-reach ✔️
+  * fetch-reach-dense ✔️
+  * fetch-pick-and-place ✔️
+  * fetch-pick-and-place-dense ✔️
+  * point-maze-u
+  * point-maze-u-dense
+  * point-maze-o
+  * point-maze-o-dense
+
+### PEBBLE
+```console
+~$ python experiments/pebble.py pebble --run=<run> --env=<environment> --num_envs=1 --seed=1
+```
+* ``<environment>`` Use one of the followings:
+  * point-maze-u ✔️
+  * point-maze-u-dense
+  * point-maze-o ✔️
+  * point-maze-o-dense
+  * button-press
+
+## Deprecated
 
 ### DDPG+HER with sparse rewards on FetchPush-v1
 ```console

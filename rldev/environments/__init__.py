@@ -297,3 +297,54 @@ def create_env(name, *args, **kwargs):
       raise NotImplementedError()
 
   return make(name)
+
+
+R = "r"
+G = "g"
+O_MAZE   = [[1, 1, 1, 1, 1, 1, 1],
+            [1, G, 0, 0, 0, G, 1],
+            [1, 0, 1, 1, 1, 0, 1],
+            [1, R, 0, 0, 0, G, 1],
+            [1, 1, 1, 1, 1, 1, 1]]
+O_MAZE_1 = [[1, 1, 1, 1, 1, 1, 1],
+            [1, G, 0, 0, 0, 0, 1],
+            [1, 0, 1, 1, 1, 0, 1],
+            [1, R, 0, 0, G, 0, 1],
+            [1, 1, 1, 1, 1, 1, 1]]
+O_MAZE_2 = [[1, 1, 1, 1, 1, 1, 1],
+            [1, 0, 0, 0, G, 0, 1],
+            [1, 0, 1, 1, 1, G, 1],
+            [1, R, 0, 0, 0, 0, 1],
+            [1, 1, 1, 1, 1, 1, 1]]
+O_MAZE_3 = [[1, 1, 1, 1, 1, 1, 1],
+            [1, G, 0, 0, 0, 0, 1],
+            [1, 0, 1, 1, 1, G, 1],
+            [1, R, 0, 0, 0, 0, 1],
+            [1, 1, 1, 1, 1, 1, 1]]
+
+envs = {"fetch-push": ("FetchPush-v2", (), {}),
+        "fetch-push-dense": ("FetchPushDense-v2", (), {}),
+        "fetch-reach": ("FetchReach-v2", (), {}),
+        "fetch-reach-dense": ("FetchReachDense-v2", (), {}),
+        "fetch-pick-and-place": ("FetchPickAndPlace-v2", (), {}),
+        "fetch-pick-and-place-dense": ("FetchPickAndPlaceDense-v2", (), {}),
+        "point-maze-u": ("PointMaze_UMaze-v3", (), {}),
+        "point-maze-u-dense": ("PointMaze_UMazeDense-v3", (), {}),
+        "point-maze-o": ("PointMaze_UMaze-v3", (), {"maze_map": O_MAZE, "render_mode": "rgb_array"}),
+        "point-maze-o-dense": ("PointMaze_UMazeDense-v3", (), {"maze_map": O_MAZE}),
+        "point-maze-o-1": ("PointMaze_UMaze-v3", (), {"maze_map": O_MAZE_1}),
+        "point-maze-o-1-dense": ("PointMaze_UMazeDense-v3", (), {"maze_map": O_MAZE_1}),
+        "point-maze-o-2": ("PointMaze_UMaze-v3", (), {"maze_map": O_MAZE_2}),
+        "point-maze-o-2-dense": ("PointMaze_UMazeDense-v3", (), {"maze_map": O_MAZE_2}),
+        "point-maze-o-3": ("PointMaze_UMaze-v3", (), {"maze_map": O_MAZE_3}),
+        "point-maze-o-3-dense": ("PointMaze_UMazeDense-v3", (), {"maze_map": O_MAZE_3}),
+        }
+
+
+def create_env_by_name(name):
+  try:
+    name, args, kwargs = envs.get(name)
+  except:
+    raise KeyError(f"unknown environment '{name}'")
+  else:
+    return create_env(name, *args, **kwargs)

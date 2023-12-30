@@ -4,6 +4,7 @@ import os
 import sys
 import time
 import pickle
+import wandb
 
 from abc import *
 from collections import OrderedDict
@@ -27,14 +28,14 @@ class Agent(metaclass=ABCMeta):
                test_env,
                policy):
 
-    this_run_path = Path(os.path.realpath(sys.argv[0]))
-    self._workspace = wdir = (Path(this_run_path.parent) 
-                              / "data" 
-                              / this_run_path.stem
-                              / f"{config.run}")
+    # this_run_path = Path(os.path.realpath(sys.argv[0]))
+    # self._workspace = wdir = (Path(this_run_path.parent) 
+    #                           / "data" 
+    #                           / this_run_path.stem
+    #                           / f"{config.run}")
 
-    print(f"create working directory {wdir}")
-    wdir.mkdir(parents=True, exist_ok=True)
+    # print(f"create working directory {wdir}")
+    # wdir.mkdir(parents=True, exist_ok=True)
 
     self._nodes = OrderedDict()
 
@@ -60,7 +61,7 @@ class Agent(metaclass=ABCMeta):
 
   @property
   def workspace(self):
-    return self._workspace.resolve()
+    return Path(wandb.run.dir)
   
   @property
   def save_dir(self):
