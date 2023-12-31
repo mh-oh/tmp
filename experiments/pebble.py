@@ -79,7 +79,7 @@ def main():
                    env.observation_space,
                    env.action_space))
   
-  wandb.init(project="rldev.experiments",
+  wandb.init(project="experiments",
              tags=[conf.run],
              config=conf)
 

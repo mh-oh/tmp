@@ -24,12 +24,14 @@ def new_tmux_sessions():
 
   numbers = []
   for sess in tmux_sessions:
-    if sess.startswith("t"):
+    if sess.startswith("__autogen__"):
       numbers.append(int(sess[1:]))
   numbers.sort()
+  if len(numbers) <= 0:
+    numbers.append(0)
 
   for sess in itertools.count(numbers[-1] + 1):
-    yield f"t{sess}" 
+    yield f"__autogen__{sess}" 
 
 
 u"""Commands."""

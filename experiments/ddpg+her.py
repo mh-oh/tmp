@@ -14,7 +14,7 @@ from rldev.utils import torch as ptu
 from rldev.utils.nn import FCBody
 
 
-@configure("rldev.experiments")
+@configure("experiments")
 def main(conf):
 
   if conf.gamma < 1.: conf.clip_target_range = (np.round(-(1 / (1 - conf.gamma)), 2), 0.)
