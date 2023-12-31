@@ -42,6 +42,8 @@ DDPG and HER are based on the version introduced by OpenAI ``baselines`` ([paper
 
 ## Getting started
 
+Every experiments are tracked by https://wandb.ai/rldev/experiments.
+
 ### DDPG+HER
 ```console
 $ python experiments/ddpg+her.py <config> --run=<run> --env=<environment> --num_envs=8 --seed=1
@@ -90,7 +92,26 @@ After that, you will see some prompts. Follow them.
 
 > [!IMPORTANT]  
 > You must properly change the contents of ``launcher_header.sh``.
-> Add necessary commands that should be excecuted before running each command in ``experiments.txt``.
+> Add commands that should be excecuted before running each command in ``experiments.txt``.
+
+## Visualization
+
+Try following example.
+
+```python
+from plot import curve, curve_reduce
+
+runs = ["lhpak61l", "m6q3yw6f", "yrbxhhzq"]
+
+curve_reduce("a.png", "test/success_rate", runs)
+curve_reduce("b.png", "test/success_rate", runs, label="b")
+curve_reduce("c.png", "test/success_rate", runs, label="c", title="c")
+
+curve("d.png", "test/success_rate", runs)
+curve("e.png", "test/success_rate", runs, labels=["e1", "e2", "e3"])
+curve("f.png", "test/success_rate", runs, labels=["f1", "f2", "f3"], title="f")
+```
+- ``runs`` should be a collection of wandb run ids.
 
 ## Todo
 
@@ -99,6 +120,7 @@ After that, you will see some prompts. Follow them.
 - [ ] Noisy samples are given the label -1 by DBSCAN. Simply excluding -1 suffice?
 - [ ] By making all experiments use wandb as logging backend, training metrics (e.g., loss, weights, etc.) are currently not tracked.
 - [ ] DDPG and DDPG+HER cannot learn anything on maze environments when using 'ddpg-her' config. 
+- [ ] In ``plot.py``, implement ``xmax`` parameter for ``curve`` and ``curve_reduce``.
 
 ## :x: Deprecated
 
