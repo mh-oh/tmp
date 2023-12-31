@@ -121,15 +121,7 @@ u"""Launch the commands with TMUX sessions attached."""
 CONTENTS = r"""
 #!/bin/bash
 
-cd /hdd/hdd1/omh/workspace/rldev/
-source ~/condasetup
-conda activate rldev
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/omh/.mujoco/mujoco210/bin
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/nvidia
-export PYTHONPATH="/hdd/hdd1/omh/workspace/rldev:$PYTHONPATH"
-export PYTHONPATH="/hdd/hdd1/omh/workspace/pebble/custom_dmc2gym:$PYTHONPATH"
-export PYTHONPATH="/hdd/hdd1/omh/workspace/pebble/Metaworld:$PYTHONPATH"
-export PYTHONPATH="/hdd/hdd1/omh/workspace/pebble/rlkit:$PYTHONPATH"
+{header}
 
 export MUJOCO_GL=egl
 export PYOPENGL_PLATFORM=egl
@@ -156,9 +148,10 @@ def run(commands, choices):
     print(f"  - gpu={gpui}, tmux-session='{sess}'")
     print(f"  - {tmux_command}")
 
+    header = "source launcher_header.sh"
     with open(tmp.name, "w") as fout:
       fout.write(CONTENTS.format(
-        gpu=gpui, command=cmd, this=tmp.name))
+        header=header, gpu=gpui, command=cmd, this=tmp.name))
     os.system(tmux_command)
 
 

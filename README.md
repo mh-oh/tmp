@@ -88,6 +88,10 @@ $ python launcher.py experiments.txt --me=<user>
 
 After that, you will see some prompts. Follow them.
 
+> [!IMPORTANT]  
+> You must properly change the contents of ``launcher_header.sh``.
+> Add necessary commands that should be excecuted before running each command in ``experiments.txt``.
+
 ## Todo
 
 - [ ] Using goal-aligned queries rarely fails completely upon random sampling.
