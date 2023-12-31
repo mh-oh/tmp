@@ -89,11 +89,11 @@ $ python launcher.py experiments.txt --me=<user>
 ```
 - ``<user>`` must be your username in the local machine where the above command runs.
 
-After that, you will see some prompts. Follow them.
+After that, you will see some prompts that you should properly follow.
 
-> [!IMPORTANT]  
-> You must properly change the contents of ``launcher_header.sh``.
-> Add commands that should be excecuted before running each command in ``experiments.txt``.
+- You must properly change the contents of ``launcher_header.sh``.
+- Add commands that should be excecuted before running each command in ``experiments.txt``.
+- Do not make tmux sessions with names starting with ``__autogen__``.
 
 ## Visualization
 
