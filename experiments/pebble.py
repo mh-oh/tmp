@@ -76,24 +76,37 @@ def main():
                    int(conf.replay_buffer_capacity),
                    env.observation_space,
                    env.action_space))
-
-  conf.policy.kwargs.obs_dim = env.envs[0].box_observation_space.shape[0]
-  conf.policy.kwargs.action_dim = env.action_space.shape[0]
-  conf.policy.kwargs.action_range = [
-    float(env.action_space.low.min()), float(env.action_space.high.max())]
   
-  conf.critic.kwargs.obs_dim = conf.policy.kwargs.obs_dim
-  conf.actor.kwargs.obs_dim = conf.policy.kwargs.obs_dim
-  conf.critic.kwargs.action_dim = conf.policy.kwargs.action_dim
-  conf.actor.kwargs.action_dim = conf.policy.kwargs.action_dim
-  conf.policy.kwargs.critic_cfg = conf.critic
-  conf.policy.kwargs.actor_cfg = conf.actor
-
   wandb.init(project="rldev.experiments",
              tags=[conf.run],
              config=conf)
 
-  policy = lambda agent: conf.policy.cls(agent, **conf.policy.kwargs)
+  observation_space = env.envs[0].box_observation_space
+  action_space = env.envs[0].action_space
+  policy = (
+    lambda agent: 
+      SACPolicy(agent,
+                      observation_space,
+                      action_space,
+                      conf.policy.kwargs.discount,
+                      conf.policy.kwargs.init_temperature,
+                      conf.policy.kwargs.alpha_lr, 
+                      conf.policy.kwargs.alpha_betas,
+                      conf.pi.kwargs.lr, 
+                      conf.pi.kwargs.betas, 
+                      conf.pi.kwargs.update_frequency, 
+                      conf.qf.kwargs.lr,
+                      conf.qf.kwargs.betas, 
+                      conf.qf.kwargs.tau, 
+                      conf.qf.kwargs.target_update_frequency,
+                      conf.policy.kwargs.batch_size, 
+                      conf.policy.kwargs.learnable_temperature,
+                      conf.qf.kwargs.hidden_dim,
+                      conf.qf.kwargs.hidden_depth,
+                      conf.pi.kwargs.hidden_dim,
+                      conf.pi.kwargs.hidden_depth,
+                      conf.pi.kwargs.log_std_bounds,))
+
   reward_model = (
     lambda agent:
       RewardModel(agent,

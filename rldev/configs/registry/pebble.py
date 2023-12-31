@@ -1,12 +1,12 @@
 
-from rldev.agents.core.bpref.sac import SACPolicy, DiagGaussianActor, DoubleQCritic
-from rldev.configs.xconf import Conf, required
+from rldev.agents.core.bpref.sac import DiagGaussianActor, DoubleQCritic
+from rldev.configs.xconf import Conf
 from rldev.configs.registry.registry import get, register
 
 
 conf = Conf()
 
-conf.logging = {}
+conf.logging = Conf()
 conf.logging.wandb = "rldev"
 
 conf.experiment = 'PEBBLE'
@@ -43,41 +43,35 @@ conf.seed = 1
 conf.gradient_update = 2
 conf.aligned_goals = False
 
-conf.policy = {}
-conf.policy.name = "sac"
-conf.policy.cls = SACPolicy
-
-conf.policy.kwargs = {}
-conf.policy.kwargs.obs_dim = required(int)
-conf.policy.kwargs.action_dim = required(int)
-conf.policy.kwargs.action_range = required(list)
+conf.policy = Conf()
+conf.policy.kwargs = Conf()
 conf.policy.kwargs.device = conf.device
 conf.policy.kwargs.discount = 0.99
 conf.policy.kwargs.init_temperature = 0.1
 conf.policy.kwargs.alpha_lr = 0.0001
 conf.policy.kwargs.alpha_betas = [0.9, 0.999]
-conf.policy.kwargs.actor_lr = 0.0003
-conf.policy.kwargs.actor_betas = [0.9, 0.999]
-conf.policy.kwargs.actor_update_frequency = 1
-conf.policy.kwargs.critic_lr = 0.0003
-conf.policy.kwargs.critic_betas = [0.9, 0.999]
-conf.policy.kwargs.critic_tau = 0.005
-conf.policy.kwargs.critic_target_update_frequency = 2
 conf.policy.kwargs.batch_size = 512
 conf.policy.kwargs.learnable_temperature = True
 
-conf.critic = {}
-conf.critic.cls = DoubleQCritic
-conf.critic.kwargs = {}
-conf.critic.kwargs.hidden_dim = 256
-conf.critic.kwargs.hidden_depth = 3
+conf.qf = Conf()
+conf.qf.cls = DoubleQCritic
+conf.qf.kwargs = Conf()
+conf.qf.kwargs.hidden_dim = 256
+conf.qf.kwargs.hidden_depth = 3
+conf.qf.kwargs.lr = 0.0003
+conf.qf.kwargs.betas = [0.9, 0.999]
+conf.qf.kwargs.tau = 0.005
+conf.qf.kwargs.target_update_frequency = 2
 
-conf.actor = {}
-conf.actor.cls = DiagGaussianActor
-conf.actor.kwargs = {}
-conf.actor.kwargs.hidden_depth = 3
-conf.actor.kwargs.hidden_dim = 256
-conf.actor.kwargs.log_std_bounds = [-5, 2]
+conf.pi = Conf()
+conf.pi.cls = DiagGaussianActor
+conf.pi.kwargs = Conf()
+conf.pi.kwargs.hidden_depth = 3
+conf.pi.kwargs.hidden_dim = 256
+conf.pi.kwargs.log_std_bounds = [-5, 2]
+conf.pi.kwargs.lr = 0.0003
+conf.pi.kwargs.betas = [0.9, 0.999]
+conf.pi.kwargs.update_frequency = 1
 
 register("pebble", conf)
 

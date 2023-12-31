@@ -11,6 +11,7 @@ from torch import nn
 
 from rldev.agents.core import Node
 from rldev.agents.core.bpref import utils
+from rldev.utils import torch as thu
 
 
 class TanhTransform(pyd.transforms.Transform):
@@ -64,10 +65,16 @@ class SquashedNormal(pyd.transformed_distribution.TransformedDistribution):
 
 class DiagGaussianActor(nn.Module):
   """torch.distributions implementation of an diagonal Gaussian policy."""
-  def __init__(self, obs_dim, action_dim, hidden_dim, hidden_depth,
-                log_std_bounds):
+  def __init__(self, 
+               observation_space, 
+               action_space, 
+               hidden_dim, 
+               hidden_depth,
+               log_std_bounds):
     super().__init__()
 
+    obs_dim = observation_space.shape[0]
+    action_dim = action_space.shape[0]
     self.log_std_bounds = log_std_bounds
     self.trunk = utils.mlp(obs_dim, hidden_dim, 2 * action_dim, hidden_depth)
 
@@ -107,9 +114,12 @@ from torch import nn
 class DoubleQCritic(nn.Module):
   """Critic network, employes double Q-learning."""
 
-  def __init__(self, obs_dim, action_dim, hidden_dim, hidden_depth):
+  def __init__(self, 
+               observation_space, action_space, hidden_dim, hidden_depth):
     super().__init__()
 
+    obs_dim = observation_space.shape[0]
+    action_dim = action_space.shape[0]
     self.Q1 = utils.mlp(obs_dim + action_dim, hidden_dim, 1, hidden_depth)
     self.Q2 = utils.mlp(obs_dim + action_dim, hidden_dim, 1, hidden_depth)
 
@@ -157,43 +167,70 @@ def compute_state_entropy(obs, full_obs, k):
 
 class SACPolicy(Node):
   """SAC algorithm."""
-  def __init__(self, agent, obs_dim, action_dim, action_range, device, critic_cfg,
-                actor_cfg, discount, init_temperature, alpha_lr, alpha_betas,
-                actor_lr, actor_betas, actor_update_frequency, critic_lr,
-                critic_betas, critic_tau, critic_target_update_frequency,
-                batch_size, learnable_temperature,
-                normalize_state_entropy=True):
+  def __init__(self, 
+               agent, 
+               observation_space,
+               action_space, 
+               discount, 
+               init_temperature, 
+               alpha_lr, 
+               alpha_betas,
+               actor_lr, 
+               actor_betas, 
+               actor_update_frequency, 
+               critic_lr,
+               critic_betas, 
+               critic_tau, 
+               critic_target_update_frequency,
+               batch_size, 
+               learnable_temperature,
+               qf_hidden_dim,
+               qf_hidden_depth,
+               pi_hidden_dim,
+               pi_hidden_depth,
+               pi_log_std_bounds,
+               normalize_state_entropy=True):
     super().__init__(agent)
 
-    self.action_range = action_range
-    self.device = torch.device(device)
+    self.action_range = [float(action_space.low.min()), float(action_space.high.max())]
+    self.device = thu.device()
     self.discount = discount
     self.critic_tau = critic_tau
     self.actor_update_frequency = actor_update_frequency
     self.critic_target_update_frequency = critic_target_update_frequency
     self.batch_size = batch_size
     self.learnable_temperature = learnable_temperature
-    self.critic_cfg = critic_cfg
+
     self.critic_lr = critic_lr
     self.critic_betas = critic_betas
-    self.s_ent_stats = utils.TorchRunningMeanStd(shape=[1], device=device)
+    self.s_ent_stats = utils.TorchRunningMeanStd(shape=[1], device=thu.device())
     self.normalize_state_entropy = normalize_state_entropy
     self.init_temperature = init_temperature
     self.alpha_lr = alpha_lr
     self.alpha_betas = alpha_betas
-    self.actor_cfg = actor_cfg
     self.actor_betas = actor_betas
     self.alpha_lr = alpha_lr
 
-    self.critic = critic_cfg.cls(**critic_cfg.kwargs).to(self.device)
-    self.critic_target = critic_cfg.cls(**critic_cfg.kwargs).to(self.device)
+    self.qf_kwargs = {"observation_space": observation_space,
+                      "action_space": action_space,
+                      "hidden_dim": qf_hidden_dim,
+                      "hidden_depth": qf_hidden_depth}
+    self.critic = DoubleQCritic(**self.qf_kwargs).to(self.device)
+    self.critic_target = DoubleQCritic(**self.qf_kwargs).to(self.device)
     self.critic_target.load_state_dict(self.critic.state_dict())
-    self.actor = actor_cfg.cls(**actor_cfg.kwargs).to(self.device)
+
+    self.pi_kwargs = {"observation_space": observation_space,
+                      "action_space": action_space,
+                      "hidden_dim": pi_hidden_dim,
+                      "hidden_depth": pi_hidden_depth,
+                      "log_std_bounds": pi_log_std_bounds}
+    self.actor = DiagGaussianActor(**self.pi_kwargs).to(self.device)
     self.log_alpha = torch.tensor(np.log(init_temperature)).to(self.device)
     self.log_alpha.requires_grad = True
     
     # set target entropy to -|A|
-    self.target_entropy = -action_dim
+    assert len(action_space.shape) == 1
+    self.target_entropy = -action_space.shape[0]
 
     # optimizers
     self.actor_optimizer = torch.optim.Adam(
@@ -214,8 +251,8 @@ class SACPolicy(Node):
     self.critic_target.train()
   
   def reset_critic(self):
-    self.critic = self.critic_cfg.cls(**self.critic_cfg.kwargs).to(self.device)
-    self.critic_target = self.critic_cfg.cls(**self.critic_cfg.kwargs).to(self.device)
+    self.critic = DoubleQCritic(**self.qf_kwargs).to(self.device)
+    self.critic_target = DoubleQCritic(**self.qf_kwargs).to(self.device)
     self.critic_target.load_state_dict(self.critic.state_dict())
     self.critic_optimizer = torch.optim.Adam(
         self.critic.parameters(),
@@ -232,7 +269,7 @@ class SACPolicy(Node):
         betas=self.alpha_betas)
     
     # reset actor
-    self.actor = self.actor_cfg.cls(**self.actor_cfg.kwargs).to(self.device)
+    self.actor = DiagGaussianActor(**self.pi_kwargs).to(self.device)
     self.actor_optimizer = torch.optim.Adam(
         self.actor.parameters(),
         lr=self.actor_lr,
