@@ -81,6 +81,7 @@ def main():
   
   wandb.init(project="experiments",
              tags=[conf.run],
+             entity="rldev",
              config=conf)
 
   observation_space = env.envs[0].box_observation_space

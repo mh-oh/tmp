@@ -64,6 +64,7 @@ def configure(project):
         conf.run = input(f"Name '{conf.run}' exists. try another name: ")
 
       wandb.init(project=project,
+                 entity="rldev",
                  tags=[conf.run],
                  config=conf)
 
