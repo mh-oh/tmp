@@ -68,8 +68,8 @@ class DDPGPolicy(Policy):
       target = (rewards + gammas * q_next)
       target = th.clamp(target, *config.clip_target_range)
 
-    if config.opt_steps % 1000 == 0:
-      logger.add_histogram('Optimize/Target_q', target)
+    # if config.opt_steps % 1000 == 0:
+    #   logger.add_histogram('Optimize/Target_q', target)
     
     q = critic(observations, actions)
     critic_loss = F.mse_loss(q, target)
@@ -144,8 +144,11 @@ class DDPG(OffPolicyAgent):
   def load(self): super().load()
 
   @overrides
+  def process_episodic_records(self, done):
+    return super().process_episodic_records(done)
+
+  @overrides
   def process_experience(self, experience):
-    self._logger._process_experience(experience)
     self._buffer._process_experience(experience)
 
   @overrides
@@ -156,6 +159,6 @@ class DDPG(OffPolicyAgent):
 
     if len(buffer) > config.warm_up:
       self._policy.optimize_batch(*buffer.sample(config.batch_size))
-      if config.opt_steps % config.target_network_update_freq == 0:
+      if self.opt_steps % config.target_network_update_freq == 0:
         for target, model in self._policy.targets_and_models:
           soft_update(target, model, config.target_network_update_frac)

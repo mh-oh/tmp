@@ -6,9 +6,6 @@ from rldev.configs.registry.registry import get, register
 
 conf = Conf()
 
-conf.logging = Conf()
-conf.logging.wandb = "rldev"
-
 conf.experiment = 'PEBBLE'
 conf.segment = 50
 conf.activation = 'tanh'

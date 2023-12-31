@@ -199,7 +199,7 @@ class HindsightBuffer(DictBuffer):
     episode_index = np.flatnonzero(is_episode)
     index = np.random.choice(episode_index, size=size, replace=True)
 
-    if self._agent._config.env_steps > self._agent._config.future_warm_up:
+    if self.agent.env_steps > self.agent.config.future_warm_up:
       fut_batch_size, act_batch_size, ach_batch_size, beh_batch_size, real_batch_size = np.random.multinomial(
           size, [self._fut, self._act, self._ach, self._beh, 1.])
     else:

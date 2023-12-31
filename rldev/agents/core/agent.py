@@ -1,26 +1,24 @@
 
 import numpy as np
-import os
-import sys
 import time
 import pickle
 import wandb
 
 from abc import *
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from overrides import overrides
 from pathlib import Path
 from typing import *
 
 from rldev.agents.core import Node
-from rldev.logging import Logger
-from rldev.utils.env import discounted_sum, debug_vectorized_experience, get_success_info
-from rldev.utils.time import short_timestamp
+from rldev.logging import DummyLogger
+from rldev.utils.env import debug_vectorized_experience, get_success_info
+from rldev.utils.time import return_elapsed_time
 
 
 class Agent(metaclass=ABCMeta):
 
-  def setup_logger(self): return Logger(self)
+  def setup_logger(self): return DummyLogger(self)
 
   def __init__(self,
                config,
@@ -125,12 +123,39 @@ class OffPolicyAgent(Agent):
                env, 
                test_env, 
                policy,
-               buffer):
+               buffer,
+               window=30):
     super().__init__(config, env, test_env, policy)
     self._buffer = buffer(self)
 
-    self._config.env_steps = 0
-    self._config.opt_steps = 0
+    self.env_steps = 0
+    self.opt_steps = 0
+
+    ########################################################
+    self._n_envs = n_envs = self._env.num_envs
+
+    self._logger.define("train/epoch",
+                        "train/episode",
+                        "train/episode_steps",
+                        "train/success_rate",
+                        "train/return",
+                        "test/success_rate",
+                        "test/return")
+
+    self._step = 0
+    self._episode = 0
+
+    self._done = np.ones((n_envs,), dtype=bool)
+    self._episode_step = np.zeros((n_envs,))
+    self._episode_success = np.zeros((n_envs,))
+    self._episode_return = np.zeros((n_envs,))
+
+    # We keep track of recent `window` episodes for aggregation.
+    self._episode_steps = deque([], maxlen=window)
+    self._episode_successes = deque([], maxlen=window)
+    self._episode_returns = deque([], maxlen=window)
+
+    self._log_every_n_steps = config.log_every_n_steps
 
   @property
   def buffer(self):
@@ -151,14 +176,28 @@ class OffPolicyAgent(Agent):
 
     for epoch in range(int(self._training_steps // epoch_steps)):
       elapsed = self.train(epoch_steps)
-      self.logger.log_color(
-        f"({epoch}) Training one epoch takes {elapsed:.2f} seconds.")
-      _, elapsed = self.test(test_episodes)
-      self.logger.log_color(
-        f"({epoch}) Evaluation takes {elapsed:.2f} seconds.", color="yellow")
-      self.logger.log_color(
-        f"({epoch}) Saving...", color="crimson")
+      print(f"({epoch}) Training one epoch takes {elapsed:.2f} seconds.")
+      elapsed = self.test(test_episodes)
+      print(f"({epoch}) Evaluation takes {elapsed:.2f} seconds.")
       self.save()
+  
+  @abstractmethod
+  def process_episodic_records(self, done):
+
+    if np.any(done):
+      self._episode += np.sum(done)
+      self._episode_steps.extend(self._episode_step[done])
+      self._episode_successes.extend(self._episode_success[done])
+      self._episode_returns.extend(self._episode_return[done])
+      self._episode_success[done] = 0
+      self._episode_return[done] = 0
+      self._episode_step[done] = 0
+
+    if self._step % self._log_every_n_steps < self._n_envs:
+      self.logger.log("train/episode", self._episode, self._step)
+      self.logger.log("train/episode_steps", np.mean(self._episode_steps), self._step)
+      self.logger.log("train/success_rate", np.mean(self._episode_successes), self._step)
+      self.logger.log("train/return", np.mean(self._episode_returns), self._step)
 
   def train(self, 
             epoch_steps: int, 
@@ -178,16 +217,24 @@ class OffPolicyAgent(Agent):
       next_state, reward, done, info = env.step(action)
 
       state, experience = debug_vectorized_experience(state, action, next_state, reward, done, info)
-      self.process_experience(experience)
+      for i in range(self._n_envs):
+        success = get_success_info(experience.info[i])
+        if success is not None:
+          self._episode_success[i] = max(self._episode_success[i], success)
+        self._episode_return[i] += experience.reward[i]
+        self._episode_step[i] += 1
+      self._step += self._n_envs
+      self.process_episodic_records(experience.trajectory_over)
 
+      self.process_experience(experience)
       if render:
         time.sleep(0.02)
         env.render()
       
       for _ in range(env.num_envs):
-        self._config.env_steps += 1
-        if self._config.env_steps % self._config.optimize_every == 0 and not dont_optimize:
-          self._config.opt_steps += 1
+        self.env_steps += 1
+        if self.env_steps % self.config.optimize_every == 0 and not dont_optimize:
+          self.opt_steps += 1
           self.optimize()
     
     # If using MEP prioritized replay, fit the density model
@@ -205,60 +252,40 @@ class OffPolicyAgent(Agent):
   def process_experience(self, experience):
     ...
 
+  @return_elapsed_time
   def test(self, 
            episodes: int, 
            any_success: bool = False):
 
-    start = time.time()
-
     self.evaluation_mode()
+    
+    episode_returns = []
+    episode_successes = []
+
     env = self._test_env
-    num_envs = env.num_envs
-    
-    episode_rewards, episode_steps = [], []
-    discounted_episode_rewards = []
-    is_successes = []
-    record_success = False
+    while len(episode_returns) < episodes:
+      observation = env.reset()
+      done = np.zeros((self._n_envs,))
+      episode_success = np.zeros((self._n_envs,))
+      episode_return = np.zeros((self._n_envs,))
 
-    while len(episode_rewards) < episodes:
-      state = env.reset()
+      while not np.all(done):
+        action = self._policy(observation)
+        observation, reward, done, info = env.step(action)
+        for i in range(self._n_envs):
+          if not done[i]:
+            episode_return[i] += reward[i]
+            success = get_success_info(info[i])
+            if success is not None:
+              episode_success[i] = max(episode_success[i], success) if any_success else success
 
-      dones = np.zeros((num_envs,))
-      steps = np.zeros((num_envs,))
-      is_success = np.zeros((num_envs,))
-      ep_rewards = [[] for _ in range(num_envs)]
+      episode_returns.extend(episode_return)
+      episode_successes.extend(episode_success)
 
-      while not np.all(dones):
-        action = self._policy(state)
-        state, reward, dones_, infos = env.step(action)
-
-        for i, (rew, done, info) in enumerate(zip(reward, dones_, infos)):
-          if dones[i]:
-            continue
-          ep_rewards[i].append(rew)
-          steps[i] += 1
-          if done:
-            dones[i] = 1.
-          success = get_success_info(info)
-          if success is not None:
-            record_success = True
-            is_success[i] = max(success, is_success[i]) if any_success else success
-
-      for ep_reward, step, is_succ in zip(ep_rewards, steps, is_success):
-        if record_success:
-          is_successes.append(is_succ)
-        episode_rewards.append(sum(ep_reward))
-        discounted_episode_rewards.append(discounted_sum(ep_reward, self._config.gamma))
-        episode_steps.append(step)
-    
-    if len(is_successes):
-      self._logger.add_scalar('Test/Success', np.mean(is_successes))
-    self._logger.add_scalar('Test/Episode_rewards', np.mean(episode_rewards))
-    self._logger.add_scalar('Test/Discounted_episode_rewards', np.mean(discounted_episode_rewards))
-    self._logger.add_scalar('Test/Episode_steps', np.mean(episode_steps))
-
-    return {'rewards': episode_rewards,
-            'steps': episode_steps}, time.time() - start
+    self.logger.log("test/return", 
+                    np.mean(episode_returns), self._step)
+    self.logger.log("test/success_rate",
+                    np.mean(episode_successes), self._step)
 
 
 class OnPolicyAgent(Agent):

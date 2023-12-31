@@ -28,8 +28,8 @@ class PEBBLE(PbRLAgent):
   def load(self): ...
 
   @overrides
-  def process_episodic_records(self):
-    return super().process_episodic_records()
+  def process_episodic_records(self, done):
+    return super().process_episodic_records(done)
 
   @overrides
   def optimize_reward_model(self):

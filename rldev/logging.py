@@ -28,11 +28,6 @@ class DummyLogger(Node):
 
   def __init__(self, agent):
     super().__init__(agent)
-
-    wandb.login()
-    wandb.init(project=agent.config.logging.wandb,
-               dir=agent.workspace,
-               config=agent.config)
     self._metrics = set()
 
   def define(self, *metrics):
@@ -77,7 +72,7 @@ class Logger(Node):
     self._episodes = 0
     self._tabular = defaultdict(list)
     self._last_log_step = defaultdict(int)
-    self._log_every_n_steps = self._agent._config.log_every
+    self._log_every_n_steps = self.agent.config.log_every_n_steps
     self.save_config()
 
   def lazy_init_writer(self):
@@ -99,13 +94,14 @@ class Logger(Node):
     """Adds scalar to tensorboard"""
     self.lazy_init_writer()
     if step is None:
-      step = self._agent._config.env_steps
+      step = self.agent.env_steps
     if step - self._last_log_step[tag] >= log_every:
       self._last_log_step[tag] = step
       self._writer.add_scalar(tag, value, step)
       self.update_csv(tag, value, step)
 
   def add_histogram(self, tag, values, log_every=1000, step=None, **kwargs):
+    raise
     """Adds histogram to tensorboard"""
     self.lazy_init_writer()
     if isinstance(values, list):
@@ -113,12 +109,13 @@ class Logger(Node):
     elif isinstance(values, np.ndarray):
       values = values.astype(np.float32)
     if step is None:
-      step = self._agent._config.env_steps
+      step = self.agent.env_steps
     if step - self._last_log_step[tag] >= log_every:
       self._last_log_step[tag] = step
       self._writer.add_histogram(tag, values, step, **kwargs)
 
   def add_embedding(self, tag, values, log_every=1000, step=None, **kwargs):
+    raise
     """Adds embedding data to tensorboard"""
     self.lazy_init_writer()
     if isinstance(values, list):
@@ -127,12 +124,13 @@ class Logger(Node):
       values = values.astype(np.float32)
     assert len(values.shape) == 2
     if step is None:
-      step = self._agent._config.env_steps
+      step = self.agent.env_steps
     if step - self._last_log_step[tag] >= log_every:
       self._last_log_step[tag] = step
       self._writer.add_embedding(mat=values, tag=tag, global_step=step, **kwargs)
 
   def add_tabular(self, tag, value):
+    raise
     """Adds scalar to console logger"""
     self._tabular[tag].append(value)
 

@@ -97,7 +97,9 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
 
     env = self._env
     for _ in range(epoch_length // self._n_envs):
-      self.process_episodic_records()
+      self.process_episodic_records(self._done)
+      if np.any(self._done):
+        self._done[self._done] = False
 
       # sample action for data collection
       if self._step < self.config.num_seed_steps:
@@ -134,8 +136,8 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
         success = get_success_info(info[i])
         if success is not None:
           self._episode_success[i] = max(self._episode_success[i], success)
-        self._episode_pseudo_return[i] += pseudo_reward
-        self._episode_return[i] += reward
+        self._episode_pseudo_return[i] += pseudo_reward ################################
+        self._episode_return[i] += reward ###########################
         self._episode_step[i] += 1
           
       # adding data to the reward training data
@@ -152,19 +154,18 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
       self._interact_count += self._n_envs
 
   @abstractmethod
-  def process_episodic_records(self):
+  def process_episodic_records(self, done):
 
-    if np.any(self._done):
-      self._episode += np.sum(self._done)
-      self._episode_steps.extend(self._episode_step[self._done])
-      self._episode_successes.extend(self._episode_success[self._done])
-      self._episode_returns.extend(self._episode_return[self._done])
-      self._episode_pseudo_returns.extend(self._episode_pseudo_return[self._done])
-      self._episode_success[self._done] = 0
-      self._episode_return[self._done] = 0
-      self._episode_pseudo_return[self._done] = 0
-      self._episode_step[self._done] = 0
-      self._done[self._done] = False
+    if np.any(done):
+      self._episode += np.sum(done)
+      self._episode_steps.extend(self._episode_step[done])
+      self._episode_successes.extend(self._episode_success[done])
+      self._episode_returns.extend(self._episode_return[done])
+      self._episode_pseudo_returns.extend(self._episode_pseudo_return[done])
+      self._episode_success[done] = 0
+      self._episode_return[done] = 0
+      self._episode_pseudo_return[done] = 0
+      self._episode_step[done] = 0
 
     if self._step % self._log_every_n_steps < self._n_envs:
       self.logger.log("train/episode", self._episode, self._step)

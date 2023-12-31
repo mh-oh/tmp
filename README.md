@@ -49,12 +49,12 @@ DDPG and HER are based on the version introduced by OpenAI ``baselines`` ([paper
 * ``<config>`` Use ddpg-her for Fetch environments.
 * ``<run>`` This will be a name of wandb run.
 * ``<environment>`` Use one of the followings:
-  * fetch-push ✔️
-  * fetch-push-dense ✔️
-  * fetch-reach ✔️
-  * fetch-reach-dense ✔️
-  * fetch-pick-and-place ✔️
-  * fetch-pick-and-place-dense ✔️
+  * fetch-push :heavy_check_mark:
+  * fetch-push-dense :heavy_check_mark:
+  * fetch-reach :heavy_check_mark:
+  * fetch-reach-dense :heavy_check_mark:
+  * fetch-pick-and-place :heavy_check_mark:
+  * fetch-pick-and-place-dense :heavy_check_mark:
   * point-maze-u
   * point-maze-u-dense
   * point-maze-o
@@ -65,13 +65,21 @@ DDPG and HER are based on the version introduced by OpenAI ``baselines`` ([paper
 ~$ python experiments/pebble.py pebble --run=<run> --env=<environment> --num_envs=1 --seed=1
 ```
 * ``<environment>`` Use one of the followings:
-  * point-maze-u ✔️
+  * point-maze-u :heavy_check_mark:
   * point-maze-u-dense
-  * point-maze-o ✔️
+  * point-maze-o :heavy_check_mark:
   * point-maze-o-dense
   * button-press
 
-## Deprecated
+## Todo
+
+- [ ] Using goal-aligned queries rarely fails completely upon random sampling.
+- [ ] Traking episodic (pseudo) returns during PEBBLE training will raise error if we use >1 envrionments.
+- [ ] Noisy samples are given the label -1 by DBSCAN. Simply excluding -1 suffice?
+- [ ] By making all experiments use wandb as logging backend, training metrics (e.g., loss, weights, etc.) are currently not tracked.
+- [ ] DDPG and DDPG+HER cannot learn anything on maze environments when using 'ddpg-her' config. 
+
+## :x: Deprecated
 
 ### DDPG+HER with sparse rewards on FetchPush-v1
 ```console
