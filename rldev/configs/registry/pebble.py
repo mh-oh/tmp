@@ -35,7 +35,6 @@ conf.steps = 1000000
 conf.replay_buffer_capacity = conf.steps
 conf.test_every_n_steps = 10000
 conf.num_eval_episodes = 10
-conf.device = "cuda"
 conf.log_every_n_steps = 3000
 conf.log_save_tb = True
 conf.save_video = False
@@ -45,7 +44,6 @@ conf.aligned_goals = False
 
 conf.policy = Conf()
 conf.policy.kwargs = Conf()
-conf.policy.kwargs.device = conf.device
 conf.policy.kwargs.discount = 0.99
 conf.policy.kwargs.init_temperature = 0.1
 conf.policy.kwargs.alpha_lr = 0.0001

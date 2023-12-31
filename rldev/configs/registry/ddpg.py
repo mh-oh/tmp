@@ -8,7 +8,6 @@ from rldev.configs.registry.registry import get, register
 
 conf = Conf()
 
-conf.device = "cuda" if th.cuda.is_available() else "cpu"
 conf.gamma = 0.99 # discount factor
 conf.actor_lr = 1e-3 # actor learning rate
 conf.critic_lr = 1e-3 # critic learning rate
