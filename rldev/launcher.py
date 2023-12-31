@@ -46,6 +46,8 @@ def configure(project):
     args.test_env = args.env
 
   conf = push_args(get(args.conf), args)
+  import subprocess, sys
+  conf.cmd = sys.argv[0] + " " + subprocess.list2cmdline(sys.argv[1:])
 
   def decorator(func):
     def wrap():

@@ -94,4 +94,4 @@ conf.action_l2_regularization = 1e-2
 conf.optimize_every = 2
 conf.target_network_update_freq = 10
 conf.activ = "relu"
-register("ddpg-her", conf)
+register("ddpg+her", conf)

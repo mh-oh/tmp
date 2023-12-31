@@ -7,26 +7,26 @@ We recommend Anaconda for users for easier installation of Python packages and r
 For a quick start you can simply type the commands below.
 
 ```console
-~$ git clone https://github.com/mh-oh/rldev.git
-~$ cd rldev
-~$ conda create -n rldev python=3.8
-~$ conda activate rldev
-~$ pip install torch==1.8.0+cu111 -f https://download.pytorch.org/whl/torch_stable.html
-~$ pip install gym==0.17.1
-~$ pip install scikit-learn
-~$ pip install tensorboard
-~$ pip install tabulate
-~$ pip install dill
-~$ pip install "cython<3"
-~$ pip install mujoco_py
-~$ pip install numpy==1.23.4
-~$ pip install overrides
-~$ pip install scikit-image
-~$ pip install wandb
-~$ pip install munch
-~$ pip install gymnasium
-~$ pip install gymnasium-robotics
-~$ pip install ml_collections
+$ git clone https://github.com/mh-oh/rldev.git
+$ cd rldev
+$ conda create -n rldev python=3.8
+$ conda activate rldev
+$ pip install torch==1.8.0+cu111 -f https://download.pytorch.org/whl/torch_stable.html
+$ pip install gym==0.17.1
+$ pip install scikit-learn
+$ pip install tensorboard
+$ pip install tabulate
+$ pip install dill
+$ pip install "cython<3"
+$ pip install mujoco_py
+$ pip install numpy==1.23.4
+$ pip install overrides
+$ pip install scikit-image
+$ pip install wandb
+$ pip install munch
+$ pip install gymnasium
+$ pip install gymnasium-robotics
+$ pip install ml_collections
 ```
 
 ``rldev`` requires you to have Mujoco binaries and a license key.
@@ -44,9 +44,9 @@ DDPG and HER are based on the version introduced by OpenAI ``baselines`` ([paper
 
 ### DDPG+HER
 ```console
-~$ python experiments/ddpg+her.py <config> --run=<run> --env=<environment> --num_envs=8 --seed=1
+$ python experiments/ddpg+her.py <config> --run=<run> --env=<environment> --num_envs=8 --seed=1
 ```
-* ``<config>`` Use ddpg-her for Fetch environments.
+* ``<config>`` Use 'ddpg+her' for Fetch environments.
 * ``<run>`` This will be a name of wandb run.
 * ``<environment>`` Use one of the followings:
   * fetch-push :heavy_check_mark:
@@ -62,7 +62,7 @@ DDPG and HER are based on the version introduced by OpenAI ``baselines`` ([paper
 
 ### PEBBLE
 ```console
-~$ python experiments/pebble.py pebble --run=<run> --env=<environment> --num_envs=1 --seed=1
+$ python experiments/pebble.py pebble --run=<run> --env=<environment> --num_envs=1 --seed=1
 ```
 * ``<environment>`` Use one of the followings:
   * point-maze-u :heavy_check_mark:
@@ -70,6 +70,23 @@ DDPG and HER are based on the version introduced by OpenAI ``baselines`` ([paper
   * point-maze-o :heavy_check_mark:
   * point-maze-o-dense
   * button-press
+
+## Using launcher to run multiple experiments at once
+
+Make a text file, say ``experiments.txt``, with the following contents.
+```
+python experiments/ddpg+her.py ddpg+her --run=fetch-push.ddpg+her.1 --env=fetch-push --num_envs=1 --seed=1
+python experiments/ddpg+her.py ddpg+her --run=fetch-push.ddpg+her.2 --env=fetch-push --num_envs=1 --seed=2
+python experiments/ddpg+her.py ddpg+her --run=fetch-push.ddpg+her.3 --env=fetch-push --num_envs=1 --seed=3
+```
+
+Then, execute:
+```console
+$ python launcher.py experiments.txt --me=<user>
+```
+- ``<user>`` must be your username in the local machine where the above command runs.
+
+After that, you will see some prompts. Follow them.
 
 ## Todo
 
@@ -83,12 +100,12 @@ DDPG and HER are based on the version introduced by OpenAI ``baselines`` ([paper
 
 ### DDPG+HER with sparse rewards on FetchPush-v1
 ```console
-~$ python experiments/fetch/ddpg+her.py --run=fetch-push.seed=1 --env=FetchPush-v1 --num_envs=8 --seed=1
+$ python experiments/fetch/ddpg+her.py --run=fetch-push.seed=1 --env=FetchPush-v1 --num_envs=8 --seed=1
 ```
 
 ### DDPG+HER with dense rewards on PointMaze_UMaze-v3
 ```console
-~$ python experiments/maze/ddpg+her.py --run=u-maze-dense.seed=1 --env=PointMaze_UMazeDense-v3 --num_envs=8 --seed=1
+$ python experiments/maze/ddpg+her.py --run=u-maze-dense.seed=1 --env=PointMaze_UMazeDense-v3 --num_envs=8 --seed=1
 ```
 
 ### DDPG+HER on button-press-v2
@@ -98,12 +115,12 @@ python experiments/metaworld/ddpg+her.py --run=button-press.seed=1 --env=button-
 
 ### PEBBLE on button-press-v2
 ```console
-~$ python experiments/metaworld/pebble.py
+$ python experiments/metaworld/pebble.py
 ```
 
 ### PEBBLE on FetchPush-v1
 ```console
-~$ python experiments/fetch/pebble.py
+$ python experiments/fetch/pebble.py
 ```
 
 ## References
