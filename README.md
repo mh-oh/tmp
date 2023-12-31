@@ -27,6 +27,7 @@ $ pip install munch
 $ pip install gymnasium
 $ pip install gymnasium-robotics
 $ pip install ml_collections
+$ pip install gpustat
 ```
 
 ``rldev`` requires you to have Mujoco binaries and a license key.
