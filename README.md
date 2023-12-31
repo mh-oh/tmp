@@ -75,9 +75,9 @@ $ python experiments/pebble.py pebble --run=<run> --env=<environment> --num_envs
 
 Make a text file, say ``experiments.txt``, with the following contents.
 ```
-python experiments/ddpg+her.py ddpg+her --run=fetch-push.ddpg+her.1 --env=fetch-push --num_envs=1 --seed=1
-python experiments/ddpg+her.py ddpg+her --run=fetch-push.ddpg+her.2 --env=fetch-push --num_envs=1 --seed=2
-python experiments/ddpg+her.py ddpg+her --run=fetch-push.ddpg+her.3 --env=fetch-push --num_envs=1 --seed=3
+python experiments/ddpg+her.py ddpg+her --run=fetch-push.ddpg+her.1 --env=fetch-push --num_envs=8 --seed=1
+python experiments/ddpg+her.py ddpg+her --run=fetch-push.ddpg+her.2 --env=fetch-push --num_envs=8 --seed=2
+python experiments/ddpg+her.py ddpg+her --run=fetch-push.ddpg+her.3 --env=fetch-push --num_envs=8 --seed=3
 ```
 
 Then, execute:
