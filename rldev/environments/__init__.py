@@ -5,7 +5,11 @@ import numpy as np
 import time
 import wandb
 
-from typing import *
+from abc import *
+from collections import OrderedDict
+from gym.spaces import Box, Dict
+from overrides import overrides
+from typing import Union, Callable, Optional
 
 from rldev.utils import gym_types
 from rldev.utils.structure import AttrDict
@@ -280,6 +284,42 @@ class FrameStack(gym.Wrapper):
     return LazyFrames(list(self.frames))
 
 
+from gym import spaces
+from rldev.utils.env import observation_spec, flatten_space, flatten_observation
+
+
+class DictGoalEnv:
+
+  def __init__(self, env):
+
+    self._env = env
+    self._dict_observation_space = env.observation_space
+    self._dict_spec = observation_spec(self._dict_observation_space)
+
+    self.observation_space = self._dict_observation_space
+    for key in {"observation", "achieved_goal", "desired_goal"}:
+      if key not in self.observation_space.spaces:
+        raise ValueError()
+    self.box_observation_space = flatten_space(self._dict_observation_space)
+
+  def to_dict_observation(self, box_observation):
+
+    if not isinstance(box_observation, np.ndarray):
+      raise ValueError(f"")
+    return spaces.unflatten(self._dict_observation_space, 
+                            box_observation)
+
+  def to_box_observation(self, dict_observation):    
+    
+    if not isinstance(dict_observation, (dict, OrderedDict)):
+      raise ValueError(f"")
+    return flatten_observation(self._dict_observation_space, 
+                               dict_observation)
+
+  def __getattr__(self, name):
+    return getattr(self._env, name)
+
+
 def create_env(name, seed, *args, **kwargs):
 
   from gym.envs import registry
@@ -304,7 +344,7 @@ def create_env(name, seed, *args, **kwargs):
     else:
       raise NotImplementedError()
 
-  return make(name)
+  return DictGoalEnv(make(name))
 
 
 R = "r"
@@ -339,31 +379,214 @@ MEDIUM_MAZE = [[1, 1, 1, 1, 1, 1, 1, 1],
                [1, 0, 0, 1, 0, 0, 0, 1],
                [1, 1, 1, 1, 1, 1, 1, 1]]
 
-envs = {"fetch-push": ("FetchPush-v2", (), {}),
-        "fetch-push-dense": ("FetchPushDense-v2", (), {}),
-        "fetch-reach": ("FetchReach-v2", (), {}),
-        "fetch-reach-dense": ("FetchReachDense-v2", (), {}),
-        "fetch-pick-and-place": ("FetchPickAndPlace-v2", (), {}),
-        "fetch-pick-and-place-dense": ("FetchPickAndPlaceDense-v2", (), {}),
-        "point-maze-u": ("PointMaze_UMaze-v3", (), {}),
-        "point-maze-u-dense": ("PointMaze_UMazeDense-v3", (), {}),
-        "point-maze-o": ("PointMaze_UMaze-v3", (), {"maze_map": O_MAZE, "render_mode": "rgb_array"}),
-        "point-maze-o-dense": ("PointMaze_UMazeDense-v3", (), {"maze_map": O_MAZE}),
-        "point-maze-o-1": ("PointMaze_UMaze-v3", (), {"maze_map": O_MAZE_1}),
-        "point-maze-o-1-dense": ("PointMaze_UMazeDense-v3", (), {"maze_map": O_MAZE_1}),
-        "point-maze-o-2": ("PointMaze_UMaze-v3", (), {"maze_map": O_MAZE_2}),
-        "point-maze-o-2-dense": ("PointMaze_UMazeDense-v3", (), {"maze_map": O_MAZE_2}),
-        "point-maze-o-3": ("PointMaze_UMaze-v3", (), {"maze_map": O_MAZE_3}),
-        "point-maze-o-3-dense": ("PointMaze_UMazeDense-v3", (), {"maze_map": O_MAZE_3}),
-        "point-maze-medium": ("PointMaze_UMaze-v3", (), {"maze_map": MEDIUM_MAZE}),
-        "point-maze-medium-dense": ("PointMaze_UMazeDense-v3", (), {"maze_map": MEDIUM_MAZE}),
-        }
+gym_envs = {"fetch-push": ("FetchPush-v2", (), {}),
+            "fetch-push-dense": ("FetchPushDense-v2", (), {}),
+            "fetch-reach": ("FetchReach-v2", (), {}),
+            "fetch-reach-dense": ("FetchReachDense-v2", (), {}),
+            "fetch-pick-and-place": ("FetchPickAndPlace-v2", (), {}),
+            "fetch-pick-and-place-dense": ("FetchPickAndPlaceDense-v2", (), {}),
+            "point-maze-u": ("PointMaze_UMaze-v3", (), {}),
+            "point-maze-u-dense": ("PointMaze_UMazeDense-v3", (), {}),
+            "point-maze-o": ("PointMaze_UMaze-v3", (), {"maze_map": O_MAZE, "render_mode": "rgb_array"}),
+            "point-maze-o-dense": ("PointMaze_UMazeDense-v3", (), {"maze_map": O_MAZE}),
+            "point-maze-o-1": ("PointMaze_UMaze-v3", (), {"maze_map": O_MAZE_1}),
+            "point-maze-o-1-dense": ("PointMaze_UMazeDense-v3", (), {"maze_map": O_MAZE_1}),
+            "point-maze-o-2": ("PointMaze_UMaze-v3", (), {"maze_map": O_MAZE_2}),
+            "point-maze-o-2-dense": ("PointMaze_UMazeDense-v3", (), {"maze_map": O_MAZE_2}),
+            "point-maze-o-3": ("PointMaze_UMaze-v3", (), {"maze_map": O_MAZE_3}),
+            "point-maze-o-3-dense": ("PointMaze_UMazeDense-v3", (), {"maze_map": O_MAZE_3}),
+            "point-maze-medium": ("PointMaze_UMaze-v3", (), {"maze_map": MEDIUM_MAZE}),
+            "point-maze-medium-dense": ("PointMaze_UMazeDense-v3", (), {"maze_map": MEDIUM_MAZE}),}
 
 
 def create_env_by_name(name, seed):
   try:
-    name, args, kwargs = envs.get(name)
+    name, args, kwargs = gym_envs.get(name)
   except:
-    raise KeyError(f"unknown environment '{name}'")
+    return create_metaworld_env(name, seed)
   else:
     return create_env(name, seed, *args, **kwargs)
+
+
+class BoxGoalEnv:
+  ...
+
+  def __init__(self, env):
+
+    self._env = env
+    self._box_observation_space = env.observation_space
+    self._box_spec = observation_spec(self._box_observation_space)
+
+    def box(index):
+      space = self._box_observation_space
+      return Box(
+        low=space.low[index], high=space.high[index], dtype=space.dtype)
+    self._dict_observation_space = Dict(
+      [(key, box(self.get_index(key))) for key in self.observation_keys])
+
+  @property
+  def observation_keys(self):
+    return ["observation", "achieved_goal", "desired_goal"]
+
+  @property
+  def box_observation_space(self):
+    return self._box_observation_space
+
+  @property
+  def dict_observation_space(self):
+    return self._dict_observation_space
+
+  @property
+  def observation_space(self):
+    return self.dict_observation_space
+
+  def get_index(self, key):
+    if key not in self.observation_keys:
+      raise ValueError(
+        f"key should be one of {self.observation_keys}")
+    return self.index(key)
+
+  @abstractmethod
+  def index(self, key):
+    ...
+  
+  def to_dict_observation(self, box_observation):
+
+    if not isinstance(box_observation, np.ndarray):
+      raise ValueError(f"")
+
+    dict_observation = OrderedDict()
+    for key in self.observation_keys:
+      dict_observation[key] = box_observation[self.get_index(key)]
+
+    return dict_observation
+
+  def to_box_observation(self, dict_observation):    
+    
+    if not isinstance(dict_observation, (dict, OrderedDict)):
+      raise ValueError(f"")
+
+    spec = self._box_spec
+    shapes = []
+    for key in self.observation_keys:
+      shapes.append(dict_observation[key].shape[:-len(spec.shape)])
+    if len(set(shapes)) != 1:
+      raise ValueError()
+    box_observation = np.zeros(shapes[0] + spec.shape, dtype=spec.dtype)
+    for key in self.observation_keys:
+      box_observation[..., self.get_index(key)] = dict_observation[key]
+
+    return box_observation
+
+  def __getattr__(self, name):
+    return getattr(self._env, name)
+
+  def observation(self, box_observation):
+
+    dict_observation = self.to_dict_observation(box_observation)
+    dtype = self._box_spec.dtype
+    assert (box_observation.astype(dtype) 
+            != self.to_box_observation(dict_observation)).sum() <= 0
+    return dict_observation
+
+  def reset(self):
+    return self.observation(self._env.reset())
+  
+  def step(self, action):
+    box_observation, *extra = self._env.step(action)
+    return self.observation(box_observation), *extra
+  
+  def compute_reward(self, achieved, desired, info):
+    raise
+    
+    mode = self._reward_mode
+    if mode == "dense":
+      actions = info["action"]
+      next_observations = self.to_box_observation(
+        info["next_observation"])
+      rewards = []
+      for action, next_observation in zip(actions, next_observations):
+        rewards.append(
+          self._env.compute_reward(action, 
+                                  next_observation)[0])
+      return np.array(rewards)
+
+    # Compute distance between goal and the achieved goal.
+    d = goal_distance(achieved, desired)
+    if mode == "sparse":
+      return -(d > 0.05).astype(np.float32)
+    elif mode == "distance":
+      return -d
+    
+    raise ValueError(f"...")
+
+
+class ButtonPressV2(BoxGoalEnv):
+
+  @overrides
+  def index(self, key):
+
+    shape = self._box_observation_space.shape
+    dim = np.prod(shape)
+    if key == "desired_goal":
+      return [36, 37, 38]
+    elif key == "achieved_goal":
+      return [4, 5, 6]
+    elif key == "observation":
+      return np.delete(
+        np.arange(dim).reshape(shape), self.index("desired_goal"))
+
+
+class ReachV2(BoxGoalEnv):
+
+  @overrides
+  def index(self, key):
+
+    shape = self._box_observation_space.shape
+    dim = np.prod(shape)
+    if key == "desired_goal":
+      return [36, 37, 38]
+    elif key == "achieved_goal":
+      return [4, 5, 6]
+    elif key == "observation":
+      return np.delete(
+        np.arange(dim).reshape(shape), self.index("desired_goal"))
+
+
+class PushV2(BoxGoalEnv):
+
+  @overrides
+  def index(self, key):
+
+    shape = self._box_observation_space.shape
+    dim = np.prod(shape)
+    if key == "desired_goal":
+      return [36, 37, 38]
+    elif key == "achieved_goal":
+      return [4, 5, 6]
+    elif key == "observation":
+      return np.delete(
+        np.arange(dim).reshape(shape), self.index("desired_goal"))
+
+
+from metaworld.envs.mujoco.env_dict import ALL_V2_ENVIRONMENTS as env_dict
+metaworld_envs = {"button-press": (env_dict["button-press-v2"], ButtonPressV2),
+                  "push": (env_dict["push-v2"], PushV2),
+                  "pick-place": (env_dict["pick-place-v2"], None),
+                  "reach": (env_dict["reach-v2"], ReachV2)}
+
+
+def create_metaworld_env(name, seed):
+
+  if name not in metaworld_envs:
+    raise ValueError()
+
+  cls, wrap = metaworld_envs[name]
+  env = cls()
+  env._freeze_rand_vec = False
+  env._set_task_called = True
+  env.seed(seed)
+
+  from gym.wrappers.time_limit import TimeLimit
+  from rldev.agents.core.bpref.rlkit.envs.wrappers import NormalizedBoxEnv  
+  return wrap(TimeLimit(NormalizedBoxEnv(env), env.max_path_length))

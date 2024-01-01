@@ -72,7 +72,10 @@ $ python experiments/pebble.py pebble --env=<environment> --num_envs=1 --seed=1
   * point-maze-u-dense
   * point-maze-o :heavy_check_mark:
   * point-maze-o-dense
-  * button-press
+  * button-press :heavy_check_mark:
+  * reach
+  * push
+  * pick-place
 
 ## Using launcher to run multiple experiments at once
 
@@ -116,7 +119,7 @@ curve("f.png", "test/success_rate", runs, labels=["f1", "f2", "f3"], title="f")
 
 ## Todo
 
-- [ ] Using goal-aligned queries rarely fails completely upon random sampling.
+- [x] Using goal-aligned queries rarely fails completely upon random sampling.
 - [ ] Traking episodic (pseudo) returns during PEBBLE training will raise error if we use >1 envrionments.
 - [x] Noisy samples are given the label -1 by DBSCAN. Simply excluding -1 suffice?
 - [ ] By making all experiments use wandb as logging backend, training metrics (e.g., loss, weights, etc.) are currently not tracked.

@@ -1,48 +1,14 @@
 
-import numpy as np
 import wandb
-
-from collections import OrderedDict
-from gym import spaces
 
 from rldev.agents.core.bpref import utils
 from rldev.buffers.basic import PEBBLEBuffer
-from rldev.agents.core.bpref.sac import DoubleQCritic, DiagGaussianActor, SACPolicy
+from rldev.agents.core.bpref.sac import SACPolicy
 from rldev.agents.core.bpref.reward_model import RewardModel
 from rldev.agents.pebble import PEBBLE
 from rldev.configs.registry import get
 from rldev.environments import create_env_by_name
 from rldev.launcher import parse_args, push_args
-from rldev.utils.env import observation_spec, flatten_space, flatten_observation
-
-
-class DictGoalEnv:
-
-  def __init__(self, env):
-
-    self._env = env
-    self._dict_observation_space = env.observation_space
-    self._dict_spec = observation_spec(self._dict_observation_space)
-
-    self.observation_space = self._dict_observation_space
-    self.box_observation_space = flatten_space(self._dict_observation_space)
-
-  def to_dict_observation(self, box_observation):
-
-    if not isinstance(box_observation, np.ndarray):
-      raise ValueError(f"")
-    return spaces.unflatten(self._dict_observation_space, 
-                            box_observation)
-
-  def to_box_observation(self, dict_observation):    
-    
-    if not isinstance(dict_observation, (dict, OrderedDict)):
-      raise ValueError(f"")
-    return flatten_observation(self._dict_observation_space, 
-                               dict_observation)
-
-  def __getattr__(self, name):
-    return getattr(self._env, name)
 
 
 # @configure("rldev.experiments")
@@ -70,10 +36,13 @@ def main():
 
     @property
     def _max_episode_steps(self):
-      return self.envs[0].spec.max_episode_steps
+      try:
+        return self.envs[0].spec.max_episode_steps
+      except:
+        return self.envs[0]._max_episode_steps
 
-  env = DummyVecEnv([lambda: DictGoalEnv(create_env_by_name(conf.env, conf.seed))])
-  test_env = DummyVecEnv([lambda: DictGoalEnv(create_env_by_name(conf.env, conf.seed + 1234))])
+  env = DummyVecEnv([lambda: create_env_by_name(conf.env, conf.seed)])
+  test_env = DummyVecEnv([lambda: create_env_by_name(conf.env, conf.seed + 1234)])
 
   buffer = (
     lambda agent:
