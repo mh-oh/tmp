@@ -118,7 +118,7 @@ curve("f.png", "test/success_rate", runs, labels=["f1", "f2", "f3"], title="f")
 
 - [ ] Using goal-aligned queries rarely fails completely upon random sampling.
 - [ ] Traking episodic (pseudo) returns during PEBBLE training will raise error if we use >1 envrionments.
-- [ ] Noisy samples are given the label -1 by DBSCAN. Simply excluding -1 suffice?
+- [x] Noisy samples are given the label -1 by DBSCAN. Simply excluding -1 suffice?
 - [ ] By making all experiments use wandb as logging backend, training metrics (e.g., loss, weights, etc.) are currently not tracked.
 - [ ] DDPG and DDPG+HER cannot learn anything on maze environments when using 'ddpg-her' config. 
 - [ ] In ``plot.py``, implement ``xmax`` parameter for ``curve`` and ``curve_reduce``.
