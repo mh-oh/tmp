@@ -44,9 +44,6 @@ def parse_args():
   args = parser.parse_args()
   if args.tag is None:
     args.tag = []
-  tag = f"{args.env}.{args.conf}.{args.seed}"
-  args.tag = [tag, *args.tag]
-
   return args
 
 
