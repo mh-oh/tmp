@@ -25,7 +25,7 @@ def new_tmux_sessions():
   numbers = []
   for sess in tmux_sessions:
     if sess.startswith("__autogen__"):
-      numbers.append(int(sess[1:]))
+      numbers.append(int(sess[11:]))
   numbers.sort()
   if len(numbers) <= 0:
     numbers.append(0)
