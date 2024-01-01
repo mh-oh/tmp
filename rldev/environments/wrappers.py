@@ -42,7 +42,12 @@ class GymApi(gymnasium.Wrapper):
     self._seed = None
   
   def reset(self):
-    observation, info = self.env.reset(seed=self._seed)
+    seed = self._seed
+    if seed is None:
+      return self.env.reset()[0]
+    observation, info = self.env.reset(seed=seed)
+    self.env.observation_space.seed(seed=seed)
+    self.env.action_space.seed(seed=seed)
     self._seed = None
     return observation
   
