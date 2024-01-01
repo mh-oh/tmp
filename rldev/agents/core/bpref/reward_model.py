@@ -1,9 +1,11 @@
+
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import time
 
+from itertools import combinations
 from typing import *
 
 from rldev.utils.env import observation_spec, action_spec, container, dict_container
@@ -286,6 +288,87 @@ class RewardModel(Node):
     ensemble_acc = ensemble_acc / total
     return np.mean(ensemble_acc)
   
+  def get_every_aligned_queries(self):
+
+    _episodes = np.array(
+      list(self._buffer.get_episodes()), dtype=object)
+    print("every episodes", _episodes.shape)
+
+    x = set(len(episode) for episode in _episodes)
+    if len(x) != 1:
+      raise
+    episode_steps = x.pop()
+
+    def segment(episodes, size):
+      def get(episode):
+        steps = (np.arange(0, self.size_segment) + 
+                 np.random.randint(0, episode_steps - size + 1))
+        return episode.get(steps)
+      return np.array(
+        [get(episode) for episode in episodes], dtype=object)
+
+    def queries(episodes, segment_size):
+      print("episodes with an algined goal", episodes.shape)
+      segments = segment(episodes, segment_size)
+      segments_1, segments_2 = [], []
+      c = list(combinations(segments, 2))
+      print("combinations", len(c))
+      for s1, s2 in c:
+        segments_1.append(s1)
+        segments_2.append(s2)
+
+      return (np.array(segments_1, dtype=object), 
+              np.array(segments_2, dtype=object))
+
+    def compat(segments_1, segments_2):
+      print(segments_1.shape, segments_2.shape)
+
+      fn = self.agent._env.to_box_observation
+
+      def _compat(segments):
+        sa_t, r_t = [], []
+        for seg in segments:
+          sa_t.append(np.concatenate([fn(seg.observation), seg.action], axis=-1))
+          r_t.append(seg.reward)
+        return np.stack(sa_t, axis=0), np.stack(r_t, axis=0)[..., np.newaxis]
+
+      sa_t_1, r_t_1 = _compat(segments_1)
+      sa_t_2, r_t_2 = _compat(segments_2)
+
+      return sa_t_1, sa_t_2, r_t_1, r_t_2
+
+    goals = []
+    for episode in _episodes:
+      y = np.unique(episode.observation["desired_goal"], axis=0)
+      assert len(y) == 1
+      goals.append(y[0])
+    goals = np.array(goals)
+
+    from sklearn.cluster import DBSCAN
+    cluster = DBSCAN(eps=0.3).fit(goals)
+
+    _sa_t_1, _sa_t_2, _r_t_1, _r_t_2 = [], [], [], []
+    labels = set(cluster.labels_)
+    if self.discard_outlier_goals:
+      print("discard")
+      labels.discard(-1)
+    print(labels)
+    for g in labels:
+      mask = cluster.labels_ == g
+      sa_t_1, sa_t_2, r_t_1, r_t_2 = compat(*queries(_episodes[mask], self.size_segment))
+      _sa_t_1.append(sa_t_1)
+      _sa_t_2.append(sa_t_2)
+      _r_t_1.append(r_t_1)
+      _r_t_2.append(r_t_2)
+    
+    sa_t_1 = np.concatenate(_sa_t_1, axis=0)
+    sa_t_2 = np.concatenate(_sa_t_2, axis=0)
+    r_t_1 = np.concatenate(_r_t_1, axis=0)
+    r_t_2 = np.concatenate(_r_t_2, axis=0)
+
+    print(sa_t_1.shape)
+    return sa_t_1, sa_t_2, r_t_1, r_t_2
+
   def get_queries(self, mb_size=20):
 
     _episodes = np.array(
@@ -360,7 +443,7 @@ class RewardModel(Node):
       g = labels.pop()
 
       mask = cluster.labels_ == g
-      sa_t_1, sa_t_2, r_t_1, r_t_2 = compat(*queries(_episodes[mask], mb_size, self.size_segment))
+      sa_t_1, sa_t_2, r_t_1, r_t_2 = compat(*queries(_episodes[mask], n, self.size_segment))
       print(n, len(sa_t_1))
       _sa_t_1.append(sa_t_1)
       _sa_t_2.append(sa_t_2)
@@ -372,6 +455,7 @@ class RewardModel(Node):
     r_t_1 = np.concatenate(_r_t_1, axis=0)
     r_t_2 = np.concatenate(_r_t_2, axis=0)
 
+    print(sa_t_1.shape)
     return sa_t_1, sa_t_2, r_t_1, r_t_2
 
   def put_queries(self, sa_t_1, sa_t_2, labels):
@@ -398,6 +482,7 @@ class RewardModel(Node):
       self.buffer_index = next_index
           
   def get_label(self, sa_t_1, sa_t_2, r_t_1, r_t_2):
+    assert len(sa_t_1) == self.mb_size
     sum_r_t_1 = np.sum(r_t_1, axis=1)
     sum_r_t_2 = np.sum(r_t_2, axis=1)
     
@@ -608,7 +693,6 @@ class RewardModel(Node):
     return len(labels)
   
   def entropy_sampling(self):
-    raise
     # get queries
     sa_t_1, sa_t_2, r_t_1, r_t_2 =  self.get_queries(
         mb_size=self.mb_size*self.large_batch)
@@ -629,6 +713,26 @@ class RewardModel(Node):
     
     return len(labels)
   
+  def greedy_aligned_entropy_sampling(self):
+    # get queries
+    sa_t_1, sa_t_2, r_t_1, r_t_2 =  self.get_every_aligned_queries()
+    
+    # get final queries based on uncertainty
+    entropy, _ = self.get_entropy(sa_t_1, sa_t_2)
+    
+    top_k_index = (-entropy).argsort()[:self.mb_size]
+    r_t_1, sa_t_1 = r_t_1[top_k_index], sa_t_1[top_k_index]
+    r_t_2, sa_t_2 = r_t_2[top_k_index], sa_t_2[top_k_index]
+    
+    # get labels
+    sa_t_1, sa_t_2, r_t_1, r_t_2, labels = self.get_label(    
+        sa_t_1, sa_t_2, r_t_1, r_t_2)
+    
+    if len(labels) > 0:
+      self.put_queries(sa_t_1, sa_t_2, labels)
+    
+    return len(labels)
+
   def train_reward(self):
     ensemble_losses = [[] for _ in range(self.de)]
     ensemble_acc = np.array([0 for _ in range(self.de)])

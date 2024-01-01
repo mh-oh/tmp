@@ -6,7 +6,6 @@ from rldev.configs.registry.registry import get, register
 
 conf = Conf()
 
-conf.experiment = 'PEBBLE'
 conf.segment = 50
 conf.activation = 'tanh'
 conf.num_seed_steps = 1000
@@ -15,7 +14,7 @@ conf.num_interact = 5000
 conf.reward_lr = 0.0003
 conf.reward_batch = 50
 conf.reward_update = 10
-conf.feed_type = 0
+conf.feed_type = "uniform"
 conf.reset_update = 100
 conf.topK = 5
 conf.ensemble_size = 3
@@ -38,6 +37,7 @@ conf.save_video = False
 conf.seed = 1
 conf.gradient_update = 2
 conf.aligned_goals = False
+conf.discard_outlier_goals = False # unused
 
 conf.policy = Conf()
 conf.policy.kwargs = Conf()
@@ -70,6 +70,9 @@ conf.pi.kwargs.update_frequency = 1
 
 register("pebble", conf)
 
+conf = get("pebble")
+conf.feed_type = "entropy"
+register("pebble-entropy", conf)
 
 conf = get("pebble")
 conf.aligned_goals = True
@@ -78,3 +81,7 @@ register("pebble-aligned", conf)
 conf = get("pebble-aligned")
 conf.discard_outlier_goals = True
 register("pebble-aligned-discard-outliers", conf)
+
+conf = get("pebble-aligned-discard-outliers")
+conf.feed_type = "greedy_aligned_entropy"
+register("pebble-greedy-aligned-entropy-discard-outliers", conf)
