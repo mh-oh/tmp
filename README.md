@@ -100,22 +100,10 @@ After that, you will see some prompts that you should properly follow.
 
 ## Visualization
 
-Try following example.
-
-```python
-from plot import curve, curve_reduce
-
-runs = ["lhpak61l", "m6q3yw6f", "yrbxhhzq"]
-
-curve_reduce("a.png", "test/success_rate", runs)
-curve_reduce("b.png", "test/success_rate", runs, label="b")
-curve_reduce("c.png", "test/success_rate", runs, label="c", title="c")
-
-curve("d.png", "test/success_rate", runs)
-curve("e.png", "test/success_rate", runs, labels=["e1", "e2", "e3"])
-curve("f.png", "test/success_rate", runs, labels=["f1", "f2", "f3"], title="f")
+See ``plot.py`` or simply run it:
+```console
+$ python plot.py
 ```
-- ``runs`` should be a collection of wandb run ids.
 
 ## Todo
 
