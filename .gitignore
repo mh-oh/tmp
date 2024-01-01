@@ -3,3 +3,8 @@ __pycache__
 experiments/**/data
 experiments/**/wandb
 wandb
+*.pdf
+*.png
+*.svg
+*.npy
+*.pkl
