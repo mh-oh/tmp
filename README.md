@@ -123,6 +123,7 @@ curve("f.png", "test/success_rate", runs, labels=["f1", "f2", "f3"], title="f")
 - [ ] DDPG and DDPG+HER cannot learn anything on maze environments when using 'ddpg-her' config. 
 - [ ] In ``plot.py``, implement ``xmax`` parameter for ``curve`` and ``curve_reduce``.
 - [ ] Goal-aligned entropy sampling for PEBBLE.
+- [ ] In DDPG, ``gradient_steps == 1``.
 
 ## :x: Deprecated
 
