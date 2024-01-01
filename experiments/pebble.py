@@ -55,6 +55,11 @@ def main():
   import subprocess, sys
   conf.cmd = sys.argv[0] + " " + subprocess.list2cmdline(sys.argv[1:])
 
+  wandb.init(project="experiments",
+             tags=conf.tag,
+             entity="rldev",
+             config=conf)
+
   utils.set_seed_everywhere(conf.seed)
 
   from rldev.utils.vec_env import DummyVecEnv as _DummyVecEnv
@@ -77,11 +82,6 @@ def main():
                    int(conf.replay_buffer_capacity),
                    env.observation_space,
                    env.action_space))
-  
-  wandb.init(project="experiments",
-             tags=conf.tag,
-             entity="rldev",
-             config=conf)
 
   observation_space = env.envs[0].box_observation_space
   action_space = env.envs[0].action_space

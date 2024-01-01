@@ -28,6 +28,7 @@ $ pip install gymnasium
 $ pip install gymnasium-robotics
 $ pip install ml_collections
 $ pip install gpustat
+$ pip install moviepy
 ```
 
 ``rldev`` requires you to have Mujoco binaries and a license key.

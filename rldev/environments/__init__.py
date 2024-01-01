@@ -3,6 +3,7 @@ import gym
 import gymnasium
 import numpy as np
 import time
+import wandb
 
 from typing import *
 
@@ -288,11 +289,16 @@ def create_env(name, seed, *args, **kwargs):
       return gym.make(name, *args, **kwargs)
   else:
     from gymnasium.envs import registry
+    from gymnasium.wrappers.record_video import RecordVideo
     from rldev.environments.wrappers import GymApi
     spec = registry.get(name)
     if spec is not None:
+      if "render_mode" not in kwargs:
+        kwargs["render_mode"] = "rgb_array"
       def make(name):
-        env = GymApi(gymnasium.make(name, *args, **kwargs))
+        env = gymnasium.make(name, *args, **kwargs)
+        # env = RecordVideo(env, video_folder=f"{wandb.run.dir}/videos")
+        env = GymApi(env)
         env.seed(seed)
         return env
     else:
@@ -324,6 +330,15 @@ O_MAZE_3 = [[1, 1, 1, 1, 1, 1, 1],
             [1, R, 0, 0, 0, 0, 1],
             [1, 1, 1, 1, 1, 1, 1]]
 
+MEDIUM_MAZE = [[1, 1, 1, 1, 1, 1, 1, 1],
+               [1, G, 0, 1, 0, 0, G, 1],
+               [1, 0, 0, 1, 0, 1, 0, 1],
+               [1, 1, R, 0, 0, 0, 1, 1],
+               [1, 1, 1, 0, 1, 0, 0, 1],
+               [1, 0, 0, 0, 0, 1, 0, 1],
+               [1, 0, 0, 1, 0, 0, 0, 1],
+               [1, 1, 1, 1, 1, 1, 1, 1]]
+
 envs = {"fetch-push": ("FetchPush-v2", (), {}),
         "fetch-push-dense": ("FetchPushDense-v2", (), {}),
         "fetch-reach": ("FetchReach-v2", (), {}),
@@ -340,6 +355,8 @@ envs = {"fetch-push": ("FetchPush-v2", (), {}),
         "point-maze-o-2-dense": ("PointMaze_UMazeDense-v3", (), {"maze_map": O_MAZE_2}),
         "point-maze-o-3": ("PointMaze_UMaze-v3", (), {"maze_map": O_MAZE_3}),
         "point-maze-o-3-dense": ("PointMaze_UMazeDense-v3", (), {"maze_map": O_MAZE_3}),
+        "point-maze-medium": ("PointMaze_UMaze-v3", (), {"maze_map": MEDIUM_MAZE}),
+        "point-maze-medium-dense": ("PointMaze_UMazeDense-v3", (), {"maze_map": MEDIUM_MAZE}),
         }
 
 
