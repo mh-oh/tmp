@@ -86,6 +86,7 @@ class RewardModel(Node):
                action_space, 
                max_episode_steps,
                aligned_goals,
+               discard_outlier_goals,
                ds, da, 
                 ensemble_size=3, lr=3e-4, mb_size = 128, size_segment=1, 
                 env_maker=None, max_episodes=100, activation='tanh', capacity=5e5,  
@@ -136,6 +137,7 @@ class RewardModel(Node):
 
     ####
     self.aligned_goals = aligned_goals
+    self.discard_outlier_goals = discard_outlier_goals
     self._buffer = EpisodicDictBuffer(agent,
                                       agent._env.num_envs,
                                       (max_episodes + 1) * max_episode_steps,
@@ -349,6 +351,9 @@ class RewardModel(Node):
 
     _sa_t_1, _sa_t_2, _r_t_1, _r_t_2 = [], [], [], []
     labels = set(cluster.labels_)
+    if self.discard_outlier_goals:
+      print("discard")
+      labels.discard(-1)
     print(labels)
     for x in chunk(range(mb_size), len(labels)):
       n = len(x)

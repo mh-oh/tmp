@@ -116,6 +116,7 @@ def main():
                   env.action_space,
                   env._max_episode_steps,
                   conf.aligned_goals,
+                  conf.discard_outlier_goals,
                   env.envs[0].box_observation_space.shape[0],
                   env.action_space.shape[0],
                   ensemble_size=conf.ensemble_size,

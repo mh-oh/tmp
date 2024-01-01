@@ -74,3 +74,7 @@ register("pebble", conf)
 conf = get("pebble")
 conf.aligned_goals = True
 register("pebble-aligned", conf)
+
+conf = get("pebble-aligned")
+conf.discard_outlier_goals = True
+register("pebble-aligned-discard-outliers", conf)
