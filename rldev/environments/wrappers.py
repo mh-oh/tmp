@@ -37,16 +37,16 @@ class SuccessInfo(gym.Wrapper):
 
 class GymApi(gymnasium.Wrapper):
 
-  def __init__(self, env):
+  def __init__(self, env, seed=None):
     super().__init__(env)
+    self._seed = seed
   
   def reset(self):
-    observation, info = super().reset()
+    observation, info = self.env.reset(seed=self._seed)
+    self._seed = None
     return observation
   
   def step(self, action):
-    step_return = super().step(action)
+    step_return = self.env.step(action)
     return convert_to_done_step_api(step_return)
 
-  def seed(self, seed=None):
-    ...

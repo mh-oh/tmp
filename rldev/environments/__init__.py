@@ -279,7 +279,7 @@ class FrameStack(gym.Wrapper):
     return LazyFrames(list(self.frames))
 
 
-def create_env(name, *args, **kwargs):
+def create_env(name, seed, *args, **kwargs):
 
   from gym.envs import registry
   spec = registry.env_specs.get(name)
@@ -292,7 +292,7 @@ def create_env(name, *args, **kwargs):
     spec = registry.get(name)
     if spec is not None:
       def make(name):
-        return GymApi(gymnasium.make(name, *args, **kwargs))
+        return GymApi(gymnasium.make(name, *args, **kwargs), seed)
     else:
       raise NotImplementedError()
 
@@ -341,10 +341,10 @@ envs = {"fetch-push": ("FetchPush-v2", (), {}),
         }
 
 
-def create_env_by_name(name):
+def create_env_by_name(name, seed):
   try:
     name, args, kwargs = envs.get(name)
   except:
     raise KeyError(f"unknown environment '{name}'")
   else:
-    return create_env(name, *args, **kwargs)
+    return create_env(name, seed, *args, **kwargs)

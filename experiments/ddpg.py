@@ -7,7 +7,7 @@ from rldev.agents.common.normalizer import *
 from rldev.agents.common.action_noise import *
 from rldev.agents.ddpg import DDPG, DDPGPolicy
 from rldev.agents.policy.ac import Actor, Critic
-from rldev.buffers.her import HindsightBuffer
+from rldev.buffers.basic import DictBuffer
 from rldev.environments import EnvModule, create_env_by_name
 from rldev.launcher import configure
 from rldev.utils import torch as ptu
@@ -45,12 +45,11 @@ def main(conf):
   
   buffer = (
     lambda agent:
-      HindsightBuffer(agent,
-                      train_env.num_envs,
-                      conf.replay_size,
-                      train_env.observation_space,
-                      train_env.action_space,
-                      conf.her))
+      DictBuffer(agent,
+                 train_env.num_envs,
+                 conf.replay_size,
+                 train_env.observation_space,
+                 train_env.action_space))
 
   observation_normalizer = (
     lambda agent: Normalizer(agent, MeanStdNormalizer()))

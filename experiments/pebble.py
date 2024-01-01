@@ -12,7 +12,7 @@ from rldev.agents.core.bpref.reward_model import RewardModel
 from rldev.agents.pebble import PEBBLE
 from rldev.configs.registry import get
 from rldev.environments import create_env_by_name
-from rldev.launcher import get_parser, push_args
+from rldev.launcher import parse_args, push_args
 from rldev.utils.env import observation_spec, flatten_space, flatten_observation
 
 
@@ -48,8 +48,7 @@ class DictGoalEnv:
 # @configure("rldev.experiments")
 def main():
 
-  parser = get_parser()
-  args = parser.parse_args()
+  args = parse_args()
   if args.test_env is None:
     args.test_env = args.env
   conf = push_args(get(args.conf), args)
@@ -68,8 +67,8 @@ def main():
     def _max_episode_steps(self):
       return self.envs[0].spec.max_episode_steps
 
-  env = DummyVecEnv([lambda: DictGoalEnv(create_env_by_name(conf.env))])
-  test_env = DummyVecEnv([lambda: DictGoalEnv(create_env_by_name(conf.env))])
+  env = DummyVecEnv([lambda: DictGoalEnv(create_env_by_name(conf.env, conf.seed))])
+  test_env = DummyVecEnv([lambda: DictGoalEnv(create_env_by_name(conf.env, conf.seed + 1234))])
 
   buffer = (
     lambda agent:
@@ -80,7 +79,7 @@ def main():
                    env.action_space))
   
   wandb.init(project="experiments",
-             tags=[conf.run],
+             tags=conf.tag,
              entity="rldev",
              config=conf)
 

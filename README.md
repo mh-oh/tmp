@@ -47,10 +47,9 @@ Every experiments are tracked by https://wandb.ai/rldev/experiments.
 
 ### DDPG+HER
 ```console
-$ python experiments/ddpg+her.py <config> --run=<run> --env=<environment> --num_envs=8 --seed=1
+$ python experiments/ddpg+her.py <config> --env=<environment> --num_envs=8 --seed=1
 ```
-* ``<config>`` Use 'ddpg+her' for Fetch environments.
-* ``<run>`` This will be a name of wandb run.
+* ``<config>`` Use 'ddpg+her' or 'ddpg' for Fetch environments.
 * ``<environment>`` Use one of the followings:
   * fetch-push :heavy_check_mark:
   * fetch-push-dense :heavy_check_mark:
@@ -65,7 +64,7 @@ $ python experiments/ddpg+her.py <config> --run=<run> --env=<environment> --num_
 
 ### PEBBLE
 ```console
-$ python experiments/pebble.py pebble --run=<run> --env=<environment> --num_envs=1 --seed=1
+$ python experiments/pebble.py pebble --env=<environment> --num_envs=1 --seed=1
 ```
 * ``<environment>`` Use one of the followings:
   * point-maze-u :heavy_check_mark:
@@ -78,9 +77,9 @@ $ python experiments/pebble.py pebble --run=<run> --env=<environment> --num_envs
 
 Make a text file, say ``experiments.txt``, with the following contents.
 ```
-python experiments/ddpg+her.py ddpg+her --run=fetch-push.ddpg+her.1 --env=fetch-push --num_envs=8 --seed=1
-python experiments/ddpg+her.py ddpg+her --run=fetch-push.ddpg+her.2 --env=fetch-push --num_envs=8 --seed=2
-python experiments/ddpg+her.py ddpg+her --run=fetch-push.ddpg+her.3 --env=fetch-push --num_envs=8 --seed=3
+python experiments/ddpg+her.py ddpg+her --env=fetch-push --num_envs=8 --seed=1
+python experiments/ddpg+her.py ddpg+her --env=fetch-push --num_envs=8 --seed=2
+python experiments/ddpg+her.py ddpg+her --env=fetch-push --num_envs=8 --seed=3
 ```
 
 Then, execute:

@@ -20,8 +20,8 @@ def get_parser():
 
   parser = argparse.ArgumentParser()
   parser.add_argument("conf")
-  parser.add_argument("--run", 
-    required=True, type=str, help="name of this run")
+  parser.add_argument("--tag",
+    nargs="+", type=str, help="tags of this run")
   parser.add_argument("--seed",
     required=True, type=int, help="seed of this run")
   parser.add_argument("--env", 
@@ -38,10 +38,21 @@ def get_parser():
   return parser
 
 
-def configure(project):
-
+def parse_args():
+  
   parser = get_parser()
   args = parser.parse_args()
+  if args.tag is None:
+    args.tag = []
+  tag = f"{args.env}.{args.conf}.{args.seed}"
+  args.tag = [tag, *args.tag]
+
+  return args
+
+
+def configure(project):
+
+  args = parse_args()
   if args.test_env is None:
     args.test_env = args.env
 
@@ -65,7 +76,7 @@ def configure(project):
 
       wandb.init(project=project,
                  entity="rldev",
-                 tags=[conf.run],
+                 tags=conf.tag,
                  config=conf)
 
       return func(conf)
