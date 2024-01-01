@@ -62,18 +62,6 @@ def configure(project):
 
   def decorator(func):
     def wrap():
-      api = wandb.Api()
-
-      data = []
-      for run in api.runs(project):
-        data.append((run.name, run.id, run.state))
-      print(tabulate(data,
-                     headers=["run", "id", "state"]))
-
-      names = {info[0] for info in data}
-      while conf.run in names:
-        conf.run = input(f"Name '{conf.run}' exists. try another name: ")
-
       wandb.init(project=project,
                  entity="rldev",
                  tags=conf.tag,

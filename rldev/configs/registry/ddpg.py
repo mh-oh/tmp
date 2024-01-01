@@ -95,3 +95,4 @@ conf.optimize_every = 2
 conf.target_network_update_freq = 10
 conf.activ = "relu"
 register("ddpg+her", conf)
+register("ddpg", conf)

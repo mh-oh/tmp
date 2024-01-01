@@ -45,11 +45,11 @@ DDPG and HER are based on the version introduced by OpenAI ``baselines`` ([paper
 
 Every experiments are tracked by https://wandb.ai/rldev/experiments.
 
-### DDPG+HER
+### DDPG and DDPG+HER
 ```console
-$ python experiments/ddpg+her.py <config> --env=<environment> --num_envs=8 --seed=1
+$ python experiments/ddpg.py ddpg --env=<environment> --num_envs=8 --seed=1
+$ python experiments/ddpg+her.py ddpg+her --env=<environment> --num_envs=8 --seed=1
 ```
-* ``<config>`` Use 'ddpg+her' or 'ddpg' for Fetch environments.
 * ``<environment>`` Use one of the followings:
   * fetch-push :heavy_check_mark:
   * fetch-push-dense :heavy_check_mark:

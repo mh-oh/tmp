@@ -292,7 +292,9 @@ def create_env(name, seed, *args, **kwargs):
     spec = registry.get(name)
     if spec is not None:
       def make(name):
-        return GymApi(gymnasium.make(name, *args, **kwargs), seed)
+        env = GymApi(gymnasium.make(name, *args, **kwargs))
+        env.seed(seed)
+        return env
     else:
       raise NotImplementedError()
 
