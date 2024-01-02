@@ -396,7 +396,7 @@ gym_envs = {"fetch-push": ("FetchPush-v2", (), {}),
             "point-maze-o-3": ("PointMaze_UMaze-v3", (), {"maze_map": O_MAZE_3}),
             "point-maze-o-3-dense": ("PointMaze_UMazeDense-v3", (), {"maze_map": O_MAZE_3}),
             "point-maze-medium": ("PointMaze_UMaze-v3", (), {"maze_map": MEDIUM_MAZE}),
-            "point-maze-medium-dense": ("PointMaze_UMazeDense-v3", (), {"maze_map": MEDIUM_MAZE}),}
+            "point-maze-medium-dense": ("PointMaze_UMazeDense-v3", (), {"maze_map": MEDIUM_MAZE, "reward_type": "dense"}),}
 
 
 def create_env_by_name(name, seed):
