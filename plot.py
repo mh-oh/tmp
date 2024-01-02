@@ -3,6 +3,8 @@ import wandb
 import pandas as pd
 import matplotlib.pyplot as plt
 
+from pathlib import Path
+
 
 plt.rcParams.update(
   {"axes.titlesize": "medium",
@@ -144,6 +146,9 @@ def fetch_runs(condition):
 
 if __name__ == "__main__":
 
+  dir = Path("./plots")
+  dir.mkdir(parents=True, exist_ok=True)
+
   def condition(env, conf):
     def fn(run):
       config = run.config["_fields"]
@@ -154,19 +159,31 @@ if __name__ == "__main__":
   fig, ax = plt.subplots(figsize=(4,3))
   curve = Curve("test/success_rate", title="point-maze-medium")
   runs = fetch_runs(condition(env="point-maze-medium", conf="pebble"))
-  curve.draw_reduce(fig, ax, runs, label="pebble")
+  curve.draw_reduce(fig, ax, runs, label="uniform")
   runs = fetch_runs(condition(env="point-maze-medium", conf="pebble-aligned"))
-  curve.draw_reduce(fig, ax, runs, label="pebble-aligned")
+  curve.draw_reduce(fig, ax, runs, label="uniform-aligned")
   runs = fetch_runs(condition(env="point-maze-medium", conf="pebble-entropy"))
-  curve.draw_reduce(fig, ax, runs, label="pebble-entropy")
+  curve.draw_reduce(fig, ax, runs, label="entropy")
   runs = fetch_runs(condition(env="point-maze-medium", conf="pebble-greedy-aligned-entropy-discard-outliers"))
-  curve.draw_reduce(fig, ax, runs, label="pebble-entropy-aligned")
-  fig.savefig("point-maze-medium.pdf")
+  curve.draw_reduce(fig, ax, runs, label="entropy-aligned")
+  fig.savefig(dir / "point-maze-medium.pdf")
 
   fig, ax = plt.subplots(figsize=(4,3))
   curve = Curve("test/success_rate", title="point-maze-o-3")
   runs = fetch_runs(condition(env="point-maze-o-3", conf="pebble"))
-  curve.draw_reduce(fig, ax, runs, label="pebble")
+  curve.draw_reduce(fig, ax, runs, label="uniform")
   runs = fetch_runs(condition(env="point-maze-o-3", conf="pebble-aligned"))
-  curve.draw_reduce(fig, ax, runs, label="pebble-aligned")
-  fig.savefig("point-maze-o-3.pdf")
+  curve.draw_reduce(fig, ax, runs, label="uniform-aligned")
+  fig.savefig(dir / "point-maze-o-3.pdf")
+
+  fig, ax = plt.subplots(figsize=(4,3))
+  curve = Curve("test/success_rate", "button-press")
+  runs = fetch_runs(condition(env="button-press", conf="pebble"))
+  curve.draw_reduce(fig, ax, runs, label="uniform")
+  # runs = fetch_runs(condition(env="button-press", conf="pebble-aligned"))
+  # curve.draw_reduce(fig, ax, runs, label="uniform-aligned")
+  runs = fetch_runs(condition(env="button-press", conf="pebble-entropy"))
+  curve.draw_reduce(fig, ax, runs, label="entropy")
+  runs = fetch_runs(condition(env="button-press", conf="pebble-greedy-aligned-entropy-discard-outliers"))
+  curve.draw_reduce(fig, ax, runs, label="entropy-aligned")
+  fig.savefig(dir / "button-press.pdf")
