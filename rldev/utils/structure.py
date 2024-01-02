@@ -3,6 +3,7 @@ import numpy as np
 
 from collections import defaultdict, OrderedDict
 from collections.abc import *
+from itertools import tee
 
 
 class AttrDict(dict):
@@ -229,3 +230,17 @@ def chunk(sequence, n):
   k, m = divmod(len(sequence), n)
   return (sequence[i*k+min(i, m):(i+1)*k+min(i+1, m)] for i in range(n))
 
+
+def isiterable(obj):
+  try:
+    iter(obj)
+  except:
+    return False
+  else:
+    return True
+
+
+def pairwise(iterable):
+    a, b = tee(iterable)
+    next(b, None)
+    return zip(a, b)

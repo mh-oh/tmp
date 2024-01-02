@@ -9,7 +9,7 @@ import metaworld.envs.mujoco.env_dict as _env_dict
 
 from collections import deque
 from gym.wrappers.time_limit import TimeLimit
-from rldev.agents.core.bpref.rlkit.envs.wrappers import NormalizedBoxEnv
+from rldev.agents.pref.rlkit.envs.wrappers import NormalizedBoxEnv
 from collections import deque
 from skimage.util.shape import view_as_windows
 from torch import nn

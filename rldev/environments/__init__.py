@@ -588,5 +588,5 @@ def create_metaworld_env(name, seed):
   env.seed(seed)
 
   from gym.wrappers.time_limit import TimeLimit
-  from rldev.agents.core.bpref.rlkit.envs.wrappers import NormalizedBoxEnv  
+  from rldev.agents.pref.rlkit.envs.wrappers import NormalizedBoxEnv  
   return wrap(TimeLimit(NormalizedBoxEnv(env), env.max_path_length))

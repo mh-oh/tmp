@@ -1,11 +1,11 @@
 
 import wandb
 
-from rldev.agents.core.bpref import utils
 from rldev.buffers.basic import PEBBLEBuffer
-from rldev.agents.core.bpref.sac import SACPolicy
-from rldev.agents.core.bpref.reward_model import RewardModel
+from rldev.agents.pref.sac import SACPolicy
+from rldev.agents.pref.reward_model import RewardModel
 from rldev.agents.pebble import PEBBLE
+from rldev.agents.pref import utils
 from rldev.configs.registry import get
 from rldev.environments import create_env_by_name
 from rldev.launcher import parse_args, push_args
@@ -57,26 +57,26 @@ def main():
   policy = (
     lambda agent: 
       SACPolicy(agent,
-                      observation_space,
-                      action_space,
-                      conf.policy.kwargs.discount,
-                      conf.policy.kwargs.init_temperature,
-                      conf.policy.kwargs.alpha_lr, 
-                      conf.policy.kwargs.alpha_betas,
-                      conf.pi.kwargs.lr, 
-                      conf.pi.kwargs.betas, 
-                      conf.pi.kwargs.update_frequency, 
-                      conf.qf.kwargs.lr,
-                      conf.qf.kwargs.betas, 
-                      conf.qf.kwargs.tau, 
-                      conf.qf.kwargs.target_update_frequency,
-                      conf.policy.kwargs.batch_size, 
-                      conf.policy.kwargs.learnable_temperature,
-                      conf.qf.kwargs.hidden_dim,
-                      conf.qf.kwargs.hidden_depth,
-                      conf.pi.kwargs.hidden_dim,
-                      conf.pi.kwargs.hidden_depth,
-                      conf.pi.kwargs.log_std_bounds,))
+                observation_space,
+                action_space,
+                conf.policy.kwargs.discount,
+                conf.policy.kwargs.init_temperature,
+                conf.policy.kwargs.alpha_lr, 
+                conf.policy.kwargs.alpha_betas,
+                conf.pi.kwargs.lr, 
+                conf.pi.kwargs.betas, 
+                conf.pi.kwargs.update_frequency, 
+                conf.qf.kwargs.lr,
+                conf.qf.kwargs.betas, 
+                conf.qf.kwargs.tau, 
+                conf.qf.kwargs.target_update_frequency,
+                conf.policy.kwargs.batch_size, 
+                conf.policy.kwargs.learnable_temperature,
+                conf.qf.kwargs.hidden_dim,
+                conf.qf.kwargs.hidden_depth,
+                conf.pi.kwargs.hidden_dim,
+                conf.pi.kwargs.hidden_depth,
+                conf.pi.kwargs.log_std_bounds,))
 
   reward_model = (
     lambda agent:

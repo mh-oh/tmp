@@ -9,8 +9,9 @@ from collections import deque
 from overrides import overrides
 
 from rldev.agents.core import Agent
-from rldev.agents.core.bpref import utils
+from rldev.agents.pref import utils
 from rldev.logging import DummyLogger
+from rldev.utils import torch as thu
 from rldev.utils.env import get_success_info
 
 
@@ -89,9 +90,7 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
       self.logger.log("train/epoch", epoch, self._step)
       self.train(epoch_length)
       self.test(test_episodes)
-
-    # self._policy.save(self.workspace, self._step)
-    # self._reward_model.save(self.workspace, self._step)
+      self.save()
 
   def train(self, epoch_length):
 
@@ -122,7 +121,7 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
           next_observation[i] = terminal
 
       obs = env.to_box_observation(self.obs)
-      pseudo_reward = self._reward_model.r_hat(np.concatenate([obs, action], axis=-1))[..., 0]
+      pseudo_reward = thu.numpy(self._reward_model.r_hat(np.concatenate([obs, action], axis=-1)))[..., 0]
 
       # allow infinite bootstrap
       # self._done = float(self._done)

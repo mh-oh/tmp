@@ -1,5 +1,5 @@
 
-from rldev.agents.core.bpref.sac import DiagGaussianActor, DoubleQCritic
+from rldev.agents.pref.sac import DiagGaussianActor, DoubleQCritic
 from rldev.configs.xconf import Conf
 from rldev.configs.registry.registry import get, register
 

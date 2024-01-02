@@ -2,7 +2,7 @@
 import numpy as np
 
 from overrides import overrides
-from rldev.agents.core import PbRLAgent
+from rldev.agents.pref.agent import PbRLAgent
 
 
 class PEBBLE(PbRLAgent):
@@ -22,10 +22,10 @@ class PEBBLE(PbRLAgent):
                      reward_model)
 
   @overrides
-  def save(self): ...
+  def save(self): super().save()
   
   @overrides
-  def load(self): ...
+  def load(self): super().load()
 
   @overrides
   def process_episodic_records(self, done):

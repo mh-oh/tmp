@@ -1,7 +1,7 @@
 import numpy as np
 from gym.spaces import Box
 
-from rldev.agents.core.bpref.rlkit.envs.proxy_env import ProxyEnv
+from rldev.agents.pref.rlkit.envs.proxy_env import ProxyEnv
 
 
 class NormalizedBoxEnv(ProxyEnv):

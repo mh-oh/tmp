@@ -4,6 +4,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 from pathlib import Path
+from rldev.utils.structure import isiterable
 
 
 plt.rcParams.update(
@@ -12,15 +13,6 @@ plt.rcParams.update(
    "xtick.labelsize": "medium",
    "ytick.labelsize": "medium",
    "legend.fontsize": "medium",})
-
-
-def isiterable(obj):
-  try:
-    iter(obj)
-  except:
-    return False
-  else:
-    return True
 
 
 def join_outer(dfs, on):

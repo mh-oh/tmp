@@ -1,34 +1,56 @@
 
 import numpy as np
 import torch
+import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
 import time
 
-from itertools import combinations
+from itertools import combinations, repeat
+from overrides import overrides
+from pathlib import Path
 from typing import *
 
-from rldev.utils.env import observation_spec, action_spec, container, dict_container
 from rldev.agents.core import Node, Agent
+from rldev.agents.pref.models import EnsembleReward
 from rldev.buffers.basic import EpisodicDictBuffer
+from rldev.utils import torch as thu
+from rldev.utils.structure import isiterable, pairwise
+
 
 device = 'cuda'
 
-def gen_net(in_size=1, out_size=1, H=128, n_layers=3, activation='tanh'):
-  net = []
-  for i in range(n_layers):
-    net.append(nn.Linear(in_size, H))
-    net.append(nn.LeakyReLU())
-    in_size = H
-  net.append(nn.Linear(in_size, out_size))
-  if activation == 'tanh':
-    net.append(nn.Tanh())
-  elif activation == 'sig':
-    net.append(nn.Sigmoid())
-  else:
-    net.append(nn.ReLU())
 
-  return net
+class MLP(nn.Module):
+
+  def __init__(self, dims, activations):
+    super().__init__()
+    
+    if not isiterable(dims):
+      raise ValueError(f"'dims' should be iterable")
+
+    layers = len(dims) - 1
+    if not isiterable(activations):
+      activations = repeat(activations, times=layers)
+
+    def map(x):
+      if not isinstance(x, str):
+        return x
+      return {"leaky-relu": nn.LeakyReLU,
+              "tanh": nn.Tanh,
+              "sigmoid": nn.Sigmoid,
+              "relu": nn.ReLU}[x]
+    activations = [map(x) for x in activations]
+
+    structure = []
+    for (isize, osize), cls in zip(pairwise(dims), activations):
+      structure.extend((nn.Linear(isize, osize),
+                        cls()))
+    self.body = nn.Sequential(*structure)
+
+  def forward(self, input):
+    return self.body(input)
+
 
 def KCenterGreedy(obs, full_obs, num_new_sample):
   selected_index = []
@@ -53,6 +75,7 @@ def KCenterGreedy(obs, full_obs, num_new_sample):
         obs[selected_index]], 
         axis=0)
   return selected_index
+
 
 def compute_smallest_dist(obs, full_obs):
   obs = torch.from_numpy(obs).float()
@@ -80,6 +103,7 @@ def compute_smallest_dist(obs, full_obs):
     total_dists = torch.cat(total_dists)
   return total_dists.unsqueeze(1)
 
+
 class RewardModel(Node):
 
   def __init__(self, 
@@ -104,9 +128,6 @@ class RewardModel(Node):
     self.da = da
     self.de = ensemble_size
     self.lr = lr
-    self.ensemble = []
-    self.paramlst = []
-    self.opt = None
     self.max_episodes = max_episodes
     self.activation = activation
     self.size_segment = size_segment
@@ -117,8 +138,17 @@ class RewardModel(Node):
     self.buffer_label = np.empty((self.capacity, 1), dtype=np.float32)
     self.buffer_index = 0
     self.buffer_full = False
-            
-    self.construct_ensemble()
+    
+    def thunk():
+      return MLP(dims=[self.ds + self.da, 256, 256, 256, 1],
+                 activations=["leaky-relu",
+                              "leaky-relu",
+                              "leaky-relu",
+                              self.activation]).float().to(device)
+
+    self._r = EnsembleReward([thunk for _ in range(self.de)])
+    self._r_optimizer = torch.optim.Adam(self._r.parameters(), lr=self.lr)
+
     self.mb_size = mb_size
     self.origin_mb_size = mb_size
     self.train_batch_size = 128
@@ -161,16 +191,6 @@ class RewardModel(Node):
       
   def set_teacher_thres_equal(self, new_margin):
     self.teacher_thres_equal = new_margin * self.teacher_eps_equal
-      
-  def construct_ensemble(self):
-    for i in range(self.de):
-      model = nn.Sequential(*gen_net(in_size=self.ds+self.da, 
-                                      out_size=1, H=256, n_layers=3, 
-                                      activation=self.activation)).float().to(device)
-      self.ensemble.append(model)
-      self.paramlst.extend(model.parameters())
-        
-    self.opt = torch.optim.Adam(self.paramlst, lr = self.lr)
   
   def add(self,
           observation: Dict,
@@ -207,8 +227,8 @@ class RewardModel(Node):
   def p_hat_member(self, x_1, x_2, member=-1):
     # softmaxing to get the probabilities according to eqn 1
     with torch.no_grad():
-      r_hat1 = self.r_hat_member(x_1, member=member)
-      r_hat2 = self.r_hat_member(x_2, member=member)
+      r_hat1 = self._r[member](thu.torch(x_1))
+      r_hat2 = self._r[member](thu.torch(x_2))
       r_hat1 = r_hat1.sum(axis=1)
       r_hat2 = r_hat2.sum(axis=1)
       r_hat = torch.cat([r_hat1, r_hat2], axis=-1)
@@ -219,8 +239,8 @@ class RewardModel(Node):
   def p_hat_entropy(self, x_1, x_2, member=-1):
     # softmaxing to get the probabilities according to eqn 1
     with torch.no_grad():
-      r_hat1 = self.r_hat_member(x_1, member=member)
-      r_hat2 = self.r_hat_member(x_2, member=member)
+      r_hat1 = self._r[member](thu.torch(x_1))
+      r_hat2 = self._r[member](thu.torch(x_2))
       r_hat1 = r_hat1.sum(axis=1)
       r_hat2 = r_hat2.sum(axis=1)
       r_hat = torch.cat([r_hat1, r_hat2], axis=-1)
@@ -229,32 +249,19 @@ class RewardModel(Node):
     ent = ent.sum(axis=-1).abs()
     return ent
 
-  def r_hat_member(self, x, member=-1):
-    # the network parameterizes r hat in eqn 1 from the paper
-    return self.ensemble[member](torch.from_numpy(x).float().to(device))
-
   def r_hat(self, x):
-    # they say they average the rewards from each member of the ensemble, but I think this only makes sense if the rewards are already normalized
-    # but I don't understand how the normalization should be happening right now :(
-    r_hats = []
-    for member in range(self.de):
-      r_hats.append(self.r_hat_member(x, member=member).detach().cpu().numpy())
-    r_hats = np.array(r_hats)
-    return np.mean(r_hats, axis=0)
+    return self._r(th.from_numpy(x).float().to(device), reduce="mean")
   
-  def r_hat_batch(self, x):
-    # they say they average the rewards from each member of the ensemble, but I think this only makes sense if the rewards are already normalized
-    # but I don't understand how the normalization should be happening right now :(
-    r_hats = []
-    for member in range(self.de):
-      r_hats.append(self.r_hat_member(x, member=member).detach().cpu().numpy())
-    r_hats = np.array(r_hats)
+  @overrides
+  def save(self, dir: Path):
+    dir.mkdir(parents=True, exist_ok=True)
+    
+    th.save(self._r_optimizer, dir / "_r_optimizer.pt")
+    th.save(self._r, dir / "_r.pt")
 
-    return np.mean(r_hats, axis=0)
-  
-  def save(self, model_dir, step): ...
-          
-  def load(self, model_dir, step): ...
+  @overrides
+  def load(self, dir: Path):
+    ...
   
   def get_train_acc(self):
     ensemble_acc = np.array([0 for _ in range(self.de)])
@@ -276,8 +283,8 @@ class RewardModel(Node):
       total += labels.size(0)
       for member in range(self.de):
         # get logits
-        r_hat1 = self.r_hat_member(sa_t_1, member=member)
-        r_hat2 = self.r_hat_member(sa_t_2, member=member)
+        r_hat1 = self._r[member](thu.torch(sa_t_1))
+        r_hat2 = self._r[member](thu.torch(sa_t_2))
         r_hat1 = r_hat1.sum(axis=1)
         r_hat2 = r_hat2.sum(axis=1)
         r_hat = torch.cat([r_hat1, r_hat2], axis=-1)                
@@ -746,7 +753,7 @@ class RewardModel(Node):
     total = 0
     
     for epoch in range(num_epochs):
-      self.opt.zero_grad()
+      self._r_optimizer.zero_grad()
       loss = 0.0
       
       last_index = (epoch+1)*self.train_batch_size
@@ -766,8 +773,8 @@ class RewardModel(Node):
           total += labels.size(0)
         
         # get logits
-        r_hat1 = self.r_hat_member(sa_t_1, member=member)
-        r_hat2 = self.r_hat_member(sa_t_2, member=member)
+        r_hat1 = self._r[member](thu.torch(sa_t_1))
+        r_hat2 = self._r[member](thu.torch(sa_t_2))
         r_hat1 = r_hat1.sum(axis=1)
         r_hat2 = r_hat2.sum(axis=1)
         r_hat = torch.cat([r_hat1, r_hat2], axis=-1)
@@ -783,7 +790,7 @@ class RewardModel(Node):
         ensemble_acc[member] += correct
           
       loss.backward()
-      self.opt.step()
+      self._r_optimizer.step()
     
     ensemble_acc = ensemble_acc / total
     
@@ -803,7 +810,7 @@ class RewardModel(Node):
     total = 0
     
     for epoch in range(num_epochs):
-      self.opt.zero_grad()
+      self._r_optimizer.zero_grad()
       loss = 0.0
       
       last_index = (epoch+1)*self.train_batch_size
@@ -823,8 +830,8 @@ class RewardModel(Node):
           total += labels.size(0)
         
         # get logits
-        r_hat1 = self.r_hat_member(sa_t_1, member=member)
-        r_hat2 = self.r_hat_member(sa_t_2, member=member)
+        r_hat1 = self._r[member](thu.torch(sa_t_1))
+        r_hat2 = self._r[member](thu.torch(sa_t_2))
         r_hat1 = r_hat1.sum(axis=1)
         r_hat2 = r_hat2.sum(axis=1)
         r_hat = torch.cat([r_hat1, r_hat2], axis=-1)
@@ -846,7 +853,7 @@ class RewardModel(Node):
         ensemble_acc[member] += correct
           
       loss.backward()
-      self.opt.step()
+      self._r_optimizer.step()
     
     ensemble_acc = ensemble_acc / total
     

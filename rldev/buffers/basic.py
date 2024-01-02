@@ -341,7 +341,6 @@ class PEBBLEBuffer(DictBuffer):
           thu.torch(rewards), thu.torch(next_observations),
           thu.torch(not_dones), thu.torch(not_dones_no_max))
   
-  @property
   def _every_indices(self, ravel=True):
 
     index = self._capacity if self._full else self._cursor
@@ -362,7 +361,7 @@ class PEBBLEBuffer(DictBuffer):
     env = self.agent._env
     fun = env.to_box_observation
 
-    index = self._every_indices
+    index = self._every_indices()
     every_observations = self._recursive_get(self._observations, index)
     every_observations = fun(every_observations)
     every_observations = thu.torch(every_observations)
@@ -379,28 +378,29 @@ class PEBBLEBuffer(DictBuffer):
 
     env = self.agent._env
 
-    index = self._every_indices
-    observations = self._recursive_get(self._observations, index)
-    actions = self._actions[index]
-
-    end = len(actions)
-    batch_size = 200
-    total_iter = int(end / batch_size)
+    index = self._every_indices()
+    def batchify(*sequences, size):
+      length = len(sequences[0])
+      for s in sequences:
+        if len(s) != length:
+          raise ValueError("'sequences' should be of the same length")
+      def maybe_tuple(gen):
+        res = tuple(gen)
+        if len(sequences) == 1:
+          return res[0]
+        return res
+      for i in range(0, length, size):
+        yield maybe_tuple(
+          s[i : min(i + size, length)] for s in sequences)
     
-    if end > batch_size * total_iter:
-      total_iter += 1
-        
-    for i in range(total_iter):
-      last = (i + 1) * batch_size
-      if (i + 1) * batch_size > end:
-        last = end
-      
-      index = misc.index[i  * batch_size:last]
+    for batch in batchify(*index, size=256):
 
-      observation = self._recursive_get(observations, index)
+      observation = self._recursive_get(self._observations, batch)
       observation = env.to_box_observation(observation)
-      action = actions[index]
+      action = self._actions[batch]
 
       input = np.concatenate([observation, action], axis=-1)      
-      pred_reward = predictor.r_hat_batch(input)
-      self._rewards[i * batch_size:last] = pred_reward
+      pred_reward = predictor.r_hat(input)
+      self._rewards[batch] = thu.numpy(pred_reward)[..., 0]
+
+
