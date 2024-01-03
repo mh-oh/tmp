@@ -6,8 +6,12 @@ from abc import *
 
 class Env(gymnasium.Env, metaclass=ABCMeta):
 
+  metadata = {
+    "render_modes": ["human", "rgb_array", "depth_array"],
+    "render_fps": 50}
+
   @abstractmethod
-  def reset(self, *, seed=None):
+  def reset(self, *, seed=None, options=None):
     ...
   
   @abstractmethod
@@ -17,6 +21,10 @@ class Env(gymnasium.Env, metaclass=ABCMeta):
   @abstractmethod
   def render(self):
     ...
+  
+  @property
+  def render_mode(self):
+    return "rgb_array"
   
   @property
   @abstractmethod

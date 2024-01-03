@@ -147,7 +147,8 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
                               pseudo_reward,
                               next_observation,
                               self._done,
-                              done_no_max)
+                              done_no_max,
+                              info)
 
       self.obs = maybe_next_observation
       self._step += self._n_envs
@@ -191,16 +192,20 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
                          pseudo_reward,
                          next_observation,
                          done,
-                         done_no_max):
+                         done_no_max,
+                         info):
+
     self._buffer.add(observation, 
                      action, 
                      pseudo_reward, 
                      next_observation, 
                      done,
                      done_no_max)
+    teacher_reward = np.array(
+      [info[i]["teacher_reward"] for i in range(len(info))])
     self._reward_model.add(observation,
                            action,
-                           reward,
+                           teacher_reward,
                            next_observation,
                            done)
 

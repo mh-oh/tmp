@@ -82,6 +82,10 @@ conf = get("uniform")
 conf.feed_type = "entropy"
 register("entropy", conf)
 
+conf = get("entropy")
+conf.segment = 10000
+register("entropy-long", conf)
+
 conf = get("uniform")
 conf.aligned_goals = True
 register("uniform-aligned-include-outliers", conf)

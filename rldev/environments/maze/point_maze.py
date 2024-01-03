@@ -29,7 +29,7 @@ def shortest_distance(layout, source, target):
   
   si, sj = source
   ti, tj = target
-  if layout[si, sj] == 1 or layout[tj, ti] == 1:
+  if layout[si, sj] == 1 or layout[ti, tj] == 1:
     return None
   
   visited = np.zeros(layout.shape, dtype=bool)
@@ -55,13 +55,14 @@ class PointMazeV0(Env):
   def __init__(self, 
                layout,
                reward_mode):
+    super().__init__()
     
     self._layout = layout
     self._reward_mode = reward_mode
 
     cls = point_maze.PointMazeEnv
     self._env = cls(maze_map=layout,
-                    render_mode="rgb_array",
+                    render_mode=self.render_mode,
                     reward_type=reward_mode,
                     continuing_task=True,
                     reset_target=False)
@@ -77,12 +78,26 @@ class PointMazeV0(Env):
     return self._env.action_space
 
   @overrides
-  def reset(self, *, seed=None):
-    return self._env.reset(seed=seed)
+  def reset(self, *, seed=None, options=None):
+    return self._env.reset(seed=seed, options=options)
 
   @overrides
   def step(self, action):
-    return self._env.step(action)
+
+    (observation,
+     reward,
+     termination,
+     truncation,
+     info) = self._env.step(action)
+    
+    r = self.compute_teacher_reward
+    info["teacher_reward"] = r(observation,
+                               action, observation, info)
+    return (observation,
+            reward,
+            termination,
+            truncation,
+            info)
 
   @overrides
   def render(self):
@@ -111,7 +126,7 @@ class PointMazeV0(Env):
                                info)
 
 
-class PointMazeV1(Env):
+class PointMazeV1(PointMazeV0):
   
   @overrides
   def compute_teacher_reward(self, 
