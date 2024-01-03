@@ -36,8 +36,12 @@ conf.log_save_tb = True
 conf.save_video = False
 conf.seed = 1
 conf.gradient_update = 2
+
 conf.aligned_goals = False
-conf.discard_outlier_goals = False # unused
+conf.discard_outlier_goals = False # unused if aligned_goals=False
+conf.cluster = Conf() # unused if aligned_goals=False
+conf.cluster.cls = "dbscan"
+conf.cluster.kwargs = dict(eps=0.3)
 
 conf.policy = Conf()
 conf.policy.kwargs = Conf()
@@ -68,20 +72,40 @@ conf.pi.kwargs.lr = 0.0003
 conf.pi.kwargs.betas = [0.9, 0.999]
 conf.pi.kwargs.update_frequency = 1
 
-register("pebble", conf)
+register("uniform", conf)
 
-conf = get("pebble")
+conf = get("uniform")
+conf.segment = 10000
+register("uniform-long", conf)
+
+conf = get("uniform")
 conf.feed_type = "entropy"
-register("pebble-entropy", conf)
+register("entropy", conf)
 
-conf = get("pebble")
+conf = get("uniform")
 conf.aligned_goals = True
-register("pebble-aligned", conf)
+register("uniform-aligned-include-outliers", conf)
 
-conf = get("pebble-aligned")
+conf = get("uniform-aligned-include-outliers")
 conf.discard_outlier_goals = True
-register("pebble-aligned-discard-outliers", conf)
+register("uniform-aligned", conf)
 
-conf = get("pebble-aligned-discard-outliers")
+conf = get("uniform-aligned")
 conf.feed_type = "greedy_aligned_entropy"
-register("pebble-greedy-aligned-entropy-discard-outliers", conf)
+register("entropy-aligned", conf)
+
+conf = get("entropy-aligned")
+conf.cluster.cls = "kmeans"
+conf.cluster.kwargs = dict(n_clusters=2)
+register("entropy-aligned-kmeans", conf)
+
+conf = get("uniform-aligned")
+conf.cluster.cls = "kmeans"
+conf.cluster.kwargs = dict(n_clusters=2)
+register("uniform-aligned-kmeans", conf)
+
+conf = get("entropy-aligned")
+conf.cluster.cls = "kmeans"
+conf.cluster.kwargs = dict(n_clusters=2)
+conf.segment = 10000
+register("entropy-aligned-kmeans-2-long", conf)

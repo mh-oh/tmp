@@ -113,6 +113,8 @@ class RewardModel(Node):
                max_episode_steps,
                aligned_goals,
                discard_outlier_goals,
+               cluster,
+               cluster_kwargs,
                ds, da, 
                 ensemble_size=3, lr=3e-4, mb_size = 128, size_segment=1, 
                 env_maker=None, max_episodes=100, activation='tanh', capacity=5e5,  
@@ -130,6 +132,8 @@ class RewardModel(Node):
     self.lr = lr
     self.max_episodes = max_episodes
     self.activation = activation
+    if size_segment > max_episode_steps:
+      size_segment = max_episode_steps
     self.size_segment = size_segment
     
     self.capacity = int(capacity)
@@ -170,6 +174,12 @@ class RewardModel(Node):
     ####
     self.aligned_goals = aligned_goals
     self.discard_outlier_goals = discard_outlier_goals
+
+    from sklearn.cluster import DBSCAN, KMeans
+    self._cluster = {"dbscan": DBSCAN,
+                     "kmeans": KMeans}[cluster]
+    self._cluster_kwargs = cluster_kwargs
+
     self._buffer = EpisodicDictBuffer(agent,
                                       agent._env.num_envs,
                                       (max_episodes + 1) * max_episode_steps,
@@ -351,8 +361,7 @@ class RewardModel(Node):
       goals.append(y[0])
     goals = np.array(goals)
 
-    from sklearn.cluster import DBSCAN
-    cluster = DBSCAN(eps=0.3).fit(goals)
+    cluster = self._cluster(**self._cluster_kwargs).fit(goals)
 
     _sa_t_1, _sa_t_2, _r_t_1, _r_t_2 = [], [], [], []
     labels = set(cluster.labels_)
@@ -434,8 +443,7 @@ class RewardModel(Node):
       goals.append(y[0])
     goals = np.array(goals)
 
-    from sklearn.cluster import DBSCAN
-    cluster = DBSCAN(eps=0.3).fit(goals)
+    cluster = self._cluster(**self._cluster_kwargs).fit(goals)
 
     from rldev.utils.structure import chunk
 

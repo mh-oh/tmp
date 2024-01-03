@@ -65,8 +65,9 @@ $ python experiments/ddpg+her.py ddpg+her --env=<environment> --num_envs=8 --see
 
 ### PEBBLE
 ```console
-$ python experiments/pebble.py pebble --env=<environment> --num_envs=1 --seed=1
+$ python experiments/pebble.py <conf> --env=<environment> --num_envs=1 --seed=1
 ```
+* ``<conf>`` Use 'uniform' or any other registered in ``rldev/configs/registry/pebble.py``.
 * ``<environment>`` Use one of the followings:
   * point-maze-u :heavy_check_mark:
   * point-maze-u-dense
@@ -107,6 +108,7 @@ $ python plot.py
 
 ## Todo
 
+- [ ] In maze environments, should the reward model be based only on states (not on both states and actions)?
 - [x] Using goal-aligned queries rarely fails completely upon random sampling.
 - [ ] Traking episodic (pseudo) returns during PEBBLE training will raise error if we use >1 envrionments.
 - [x] Noisy samples are given the label -1 by DBSCAN. Simply excluding -1 suffice?
