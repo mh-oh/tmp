@@ -1,4 +1,8 @@
 
+from rldev.environments.maze import point_maze
+from rldev.environments.registry import get
+
+
 import gym
 import gymnasium
 import numpy as np
