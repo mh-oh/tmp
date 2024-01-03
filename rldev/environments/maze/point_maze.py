@@ -5,7 +5,6 @@ from collections import deque
 from overrides import overrides
 
 from gymnasium_robotics.envs.maze import point_maze
-from gymnasium.utils.step_api_compatibility import convert_to_done_step_api as compat
 
 from rldev.environments.core import Env
 from rldev.environments.maze.layout import *
@@ -51,13 +50,12 @@ def shortest_distance(layout, source, target):
   return None
 
 
-class PointMazeV1(Env):
+class PointMazeV0(Env):
 
   def __init__(self, 
                layout,
                reward_mode):
     
-    self._seed = None
     self._layout = layout
     self._reward_mode = reward_mode
 
@@ -67,7 +65,7 @@ class PointMazeV1(Env):
                     reward_type=reward_mode,
                     continuing_task=True,
                     reset_target=False)
-  
+
   @property
   @overrides
   def observation_space(self):
@@ -79,35 +77,17 @@ class PointMazeV1(Env):
     return self._env.action_space
 
   @overrides
-  def reset(self, *, seed):
-
-    # 'gym' returns observation without info.
-    def compat(observation, info):
-      return observation
-
-    seed = self._seed
-    if seed is None:
-      return compat(*self._env.reset())
-
-    observation = compat(*self._env.reset(seed=seed))
-    self.env.observation_space.seed(seed=seed)
-    self.env.action_space.seed(seed=seed)
-    self._seed = None
-
-    return observation
-
-  @overrides
-  def seed(self, seed):
-    self._seed = seed
+  def reset(self, *, seed=None):
+    return self._env.reset(seed=seed)
 
   @overrides
   def step(self, action):
-    return compat(self._env.step(action))
-  
+    return self._env.step(action)
+
   @overrides
   def render(self):
     return self._env.render()
-  
+
   @overrides
   def compute_reward(self, 
                      observation, 
@@ -118,6 +98,20 @@ class PointMazeV1(Env):
     return r(next_observation["achieved_goal"], 
              observation["desired_goal"], 
              info)
+
+  @overrides
+  def compute_teacher_reward(self, 
+                             observation, 
+                             action, 
+                             next_observation, 
+                             info):
+    return self.compute_reward(observation,
+                               action,
+                               next_observation,
+                               info)
+
+
+class PointMazeV1(Env):
   
   @overrides
   def compute_teacher_reward(self, 
@@ -159,64 +153,104 @@ class PointMazeV2(PointMazeV1):
     return np.exp(-distance)
 
 
-def v1(layout, reward_mode):
-  def thunk():
-    return PointMazeV1(layout, reward_mode)
-  return thunk
+def register(id, **kwargs):
+  from gymnasium.envs.registration import register
+  return register(id,
+                  "rldev.environments.maze.point_maze:PointMazeV0",
+                  max_episode_steps=300,
+                  kwargs=kwargs)
 
-register(v1(MEDIUM_2_1, "sparse"),
-         "point-maze-v1-medium-2-1-sparse")
-register(v1(MEDIUM_2_1, "dense"),
-         "point-maze-v1-medium-2-1-dense")
-register(v1(MEDIUM_2_2, "sparse"),
-         "point-maze-v1-medium-2-2-sparse")
-register(v1(MEDIUM_2_2, "dense"),
-         "point-maze-v1-medium-2-2-dense")
+register("point-maze-v0/medium-2-1-sparse",
+         layout=MEDIUM_2_1, reward_mode="sparse")
+register("point-maze-v0/medium-2-1-dense",
+         layout=MEDIUM_2_1, reward_mode="dense")
+register("point-maze-v0/medium-2-2-sparse",
+         layout=MEDIUM_2_2, reward_mode="sparse")
+register("point-maze-v0/medium-2-2-dense",
+         layout=MEDIUM_2_2, reward_mode="dense")
 
-register(v1(LARGE_2_1, "sparse"),
-         "point-maze-v1-large-2-1-sparse")
-register(v1(LARGE_2_1, "dense"),
-         "point-maze-v1-large-2-1-dense")
-register(v1(LARGE_2_2, "sparse"),
-         "point-maze-v1-large-2-2-sparse")
-register(v1(LARGE_2_2, "dense"),
-         "point-maze-v1-large-2-2-dense")
-register(v1(LARGE_3_1, "sparse"),
-         "point-maze-v1-large-3-1-sparse")
-register(v1(LARGE_3_1, "dense"),
-         "point-maze-v1-large-3-1-dense")
-register(v1(LARGE_3_2, "sparse"),
-         "point-maze-v1-large-3-2-sparse")
-register(v1(LARGE_3_2, "dense"),
-         "point-maze-v1-large-3-2-dense")
+register("point-maze-v0/large-2-1-sparse",
+         layout=LARGE_2_1, reward_mode="sparse")
+register("point-maze-v0/large-2-1-dense",
+         layout=LARGE_2_1, reward_mode="dense")
+register("point-maze-v0/large-2-2-sparse",
+         layout=LARGE_2_2, reward_mode="sparse")
+register("point-maze-v0/large-2-2-dense",
+         layout=LARGE_2_2, reward_mode="dense")
+register("point-maze-v0/large-3-1-sparse",
+         layout=LARGE_3_1, reward_mode="sparse")
+register("point-maze-v0/large-3-1-dense",
+         layout=LARGE_3_1, reward_mode="dense")
+register("point-maze-v0/large-3-2-sparse",
+         layout=LARGE_3_2, reward_mode="sparse")
+register("point-maze-v0/large-3-2-dense",
+         layout=LARGE_3_2, reward_mode="dense")
 
-def v2(layout, reward_mode):
-  def thunk():
-    return PointMazeV1(layout, reward_mode)
-  return thunk
 
-register(v2(MEDIUM_2_1, "sparse"),
-         "point-maze-v2-medium-2-1-sparse")
-register(v2(MEDIUM_2_1, "dense"),
-         "point-maze-v2-medium-2-1-dense")
-register(v2(MEDIUM_2_2, "sparse"),
-         "point-maze-v2-medium-2-2-sparse")
-register(v2(MEDIUM_2_2, "dense"),
-         "point-maze-v2-medium-2-2-dense")
+def register(id, **kwargs):
+  from gymnasium.envs.registration import register
+  return register(id,
+                  "rldev.environments.maze.point_maze:PointMazeV1",
+                  max_episode_steps=300,
+                  kwargs=kwargs)
 
-register(v2(LARGE_2_1, "sparse"),
-         "point-maze-v2-large-2-1-sparse")
-register(v2(LARGE_2_1, "dense"),
-         "point-maze-v2-large-2-1-dense")
-register(v2(LARGE_2_2, "sparse"),
-         "point-maze-v2-large-2-2-sparse")
-register(v2(LARGE_2_2, "dense"),
-         "point-maze-v2-large-2-2-dense")
-register(v2(LARGE_3_1, "sparse"),
-         "point-maze-v2-large-3-1-sparse")
-register(v2(LARGE_3_1, "dense"),
-         "point-maze-v2-large-3-1-dense")
-register(v2(LARGE_3_2, "sparse"),
-         "point-maze-v2-large-3-2-sparse")
-register(v1(LARGE_3_2, "dense"),
-         "point-maze-v2-large-3-2-dense")
+register("point-maze-v1/medium-2-1-sparse",
+         layout=MEDIUM_2_1, reward_mode="sparse")
+register("point-maze-v1/medium-2-1-dense",
+         layout=MEDIUM_2_1, reward_mode="dense")
+register("point-maze-v1/medium-2-2-sparse",
+         layout=MEDIUM_2_2, reward_mode="sparse")
+register("point-maze-v1/medium-2-2-dense",
+         layout=MEDIUM_2_2, reward_mode="dense")
+
+register("point-maze-v1/large-2-1-sparse",
+         layout=LARGE_2_1, reward_mode="sparse")
+register("point-maze-v1/large-2-1-dense",
+         layout=LARGE_2_1, reward_mode="dense")
+register("point-maze-v1/large-2-2-sparse",
+         layout=LARGE_2_2, reward_mode="sparse")
+register("point-maze-v1/large-2-2-dense",
+         layout=LARGE_2_2, reward_mode="dense")
+register("point-maze-v1/large-3-1-sparse",
+         layout=LARGE_3_1, reward_mode="sparse")
+register("point-maze-v1/large-3-1-dense",
+         layout=LARGE_3_1, reward_mode="dense")
+register("point-maze-v1/large-3-2-sparse",
+         layout=LARGE_3_2, reward_mode="sparse")
+register("point-maze-v1/large-3-2-dense",
+         layout=LARGE_3_2, reward_mode="dense")
+
+
+def register(id, **kwargs):
+  from gymnasium.envs.registration import register
+  return register(id,
+                  "rldev.environments.maze.point_maze:PointMazeV2",
+                  max_episode_steps=300,
+                  kwargs=kwargs)
+
+register("point-maze-v2/medium-2-1-sparse",
+         layout=MEDIUM_2_1, reward_mode="sparse")
+register("point-maze-v2/medium-2-1-dense",
+         layout=MEDIUM_2_1, reward_mode="dense")
+register("point-maze-v2/medium-2-2-sparse",
+         layout=MEDIUM_2_2, reward_mode="sparse")
+register("point-maze-v2/medium-2-2-dense",
+         layout=MEDIUM_2_2, reward_mode="dense")
+
+register("point-maze-v2/large-2-1-sparse",
+         layout=LARGE_2_1, reward_mode="sparse")
+register("point-maze-v2/large-2-1-dense",
+         layout=LARGE_2_1, reward_mode="dense")
+register("point-maze-v2/large-2-2-sparse",
+         layout=LARGE_2_2, reward_mode="sparse")
+register("point-maze-v2/large-2-2-dense",
+         layout=LARGE_2_2, reward_mode="dense")
+register("point-maze-v2/large-3-1-sparse",
+         layout=LARGE_3_1, reward_mode="sparse")
+register("point-maze-v2/large-3-1-dense",
+         layout=LARGE_3_1, reward_mode="dense")
+register("point-maze-v2/large-3-2-sparse",
+         layout=LARGE_3_2, reward_mode="sparse")
+register("point-maze-v2/large-3-2-dense",
+         layout=LARGE_3_2, reward_mode="dense")
+

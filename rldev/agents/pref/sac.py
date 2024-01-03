@@ -12,7 +12,9 @@ from torch import nn
 
 from rldev.agents.core import Node
 from rldev.agents.pref import utils
+from rldev.utils import gym_types
 from rldev.utils import torch as thu
+from rldev.utils.env import flatten_space
 
 
 class TanhTransform(pyd.transforms.Transform):
@@ -211,6 +213,9 @@ class SACPolicy(Node):
     self.alpha_betas = alpha_betas
     self.actor_betas = actor_betas
     self.alpha_lr = alpha_lr
+
+    if isinstance(observation_space, gym_types.Dict):
+      observation_space = flatten_space(observation_space)
 
     self.qf_kwargs = {"observation_space": observation_space,
                       "action_space": action_space,

@@ -12,7 +12,7 @@ from rldev.agents.core import Agent
 from rldev.agents.pref import utils
 from rldev.logging import DummyLogger
 from rldev.utils import torch as thu
-from rldev.utils.env import get_success_info
+from rldev.utils.env import get_success_info, flatten_observation
 
 
 class PbRLAgent(Agent, metaclass=ABCMeta):
@@ -105,7 +105,8 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
         action = np.array([env.action_space.sample() for _ in range(env.num_envs)])
       else:
         with utils.eval_mode(self._policy):
-          obs = env.to_box_observation(self.obs)
+          obs = flatten_observation(env.envs[0].observation_space,
+                                    self.obs)
           action = self._policy.act(obs, sample=True)
       assert action.ndim == 2
       self.optimize_reward_model()
@@ -120,7 +121,7 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
         if done and terminal is not None:
           next_observation[i] = terminal
 
-      obs = env.to_box_observation(self.obs)
+      obs = flatten_observation(env.envs[0].observation_space, self.obs)
       pseudo_reward = thu.numpy(self._reward_model.r_hat(np.concatenate([obs, action], axis=-1)))[..., 0]
 
       # allow infinite bootstrap
@@ -212,7 +213,8 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
     env = self._test_env
     while len(episode_returns) < episodes:
       obs = env.reset()
-      obs = env.to_box_observation(obs)
+      obs = flatten_observation(env.envs[0].observation_space,
+                                obs)
       done = np.zeros((self._n_envs,))
       episode_success = np.zeros((self._n_envs,))
       episode_return = np.zeros((self._n_envs,))
@@ -221,7 +223,8 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
         with utils.eval_mode(self._policy):
           action = self._policy.act(obs, sample=False)
         obs, reward, done, info = env.step(action)
-        obs = env.to_box_observation(obs)
+        obs = flatten_observation(env.envs[0].observation_space,
+                                  obs)
         for i in range(self._n_envs):
           if not done[i]:
             episode_return[i] += reward[i]

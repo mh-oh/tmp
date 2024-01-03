@@ -333,9 +333,11 @@ class PEBBLEBuffer(DictBuffer):
     not_dones_no_max = self._dones_no_max[index].reshape(size, 1).astype(np.float32)
     
     env = self.agent._env
-    fun = env.to_box_observation
-    observations = fun(observations)
-    next_observations = fun(next_observations)
+    def fn(observation):
+      return flatten_observation(env.envs[0].observation_space,
+                                  observation)
+    observations = fn(observations)
+    next_observations = fn(next_observations)
 
     return (thu.torch(observations), thu.torch(actions),
           thu.torch(rewards), thu.torch(next_observations),
@@ -359,11 +361,13 @@ class PEBBLEBuffer(DictBuffer):
      not_dones_no_max) = self.sample(size)
 
     env = self.agent._env
-    fun = env.to_box_observation
+    def fn(observation):
+      return flatten_observation(env.envs[0].observation_space,
+                                  observation)
 
     index = self._every_indices()
     every_observations = self._recursive_get(self._observations, index)
-    every_observations = fun(every_observations)
+    every_observations = fn(every_observations)
     every_observations = thu.torch(every_observations)
 
     return (observations,
@@ -392,11 +396,15 @@ class PEBBLEBuffer(DictBuffer):
       for i in range(0, length, size):
         yield maybe_tuple(
           s[i : min(i + size, length)] for s in sequences)
-    
+
+    def fn(observation):
+      return flatten_observation(env.envs[0].observation_space,
+                                  observation)
+
     for batch in batchify(*index, size=256):
 
       observation = self._recursive_get(self._observations, batch)
-      observation = env.to_box_observation(observation)
+      observation = fn(observation)
       action = self._actions[batch]
 
       input = np.concatenate([observation, action], axis=-1)      

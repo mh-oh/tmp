@@ -6,8 +6,6 @@ from rldev.agents.pref.sac import SACPolicy
 from rldev.agents.pref.reward_model import RewardModel
 from rldev.agents.pebble import PEBBLE
 from rldev.agents.pref import utils
-from rldev.configs.registry import get
-from rldev.environments import create_env_by_name
 from rldev.launcher import parse_args, push_args
 
 
@@ -17,6 +15,8 @@ def main():
   args = parse_args()
   if args.test_env is None:
     args.test_env = args.env
+  
+  from rldev.configs.registry import get
   conf = push_args(get(args.conf), args)
   import subprocess, sys
   conf.cmd = sys.argv[0] + " " + subprocess.list2cmdline(sys.argv[1:])
@@ -31,18 +31,24 @@ def main():
   from rldev.utils.vec_env import DummyVecEnv as _DummyVecEnv
   class DummyVecEnv(_DummyVecEnv):
 
-    def to_box_observation(self, observation):
-      return self.envs[0].to_box_observation(observation)
-
     @property
     def _max_episode_steps(self):
       try:
         return self.envs[0].spec.max_episode_steps
       except:
-        return self.envs[0]._max_episode_steps
+        try:
+          return self.envs[0]._max_episode_steps
+        except:
+          return self.envs[0].max_episode_steps
 
-  env = DummyVecEnv([lambda: create_env_by_name(conf.env, conf.seed)])
-  test_env = DummyVecEnv([lambda: create_env_by_name(conf.env, conf.seed + 1234)])
+  def env_fn(name, seed):
+    from rldev.environments import make
+    def thunk():
+      env = make(name); env.seed(seed); return env
+    return thunk
+
+  env = DummyVecEnv([env_fn(conf.env, conf.seed)])
+  test_env = DummyVecEnv([env_fn(conf.env, conf.seed + 1234)])
 
   buffer = (
     lambda agent:
@@ -52,7 +58,7 @@ def main():
                    env.observation_space,
                    env.action_space))
 
-  observation_space = env.envs[0].box_observation_space
+  observation_space = env.envs[0].observation_space
   action_space = env.envs[0].action_space
   policy = (
     lambda agent: 
@@ -88,8 +94,6 @@ def main():
                   conf.discard_outlier_goals,
                   conf.cluster.cls,
                   conf.cluster.kwargs,
-                  env.envs[0].box_observation_space.shape[0],
-                  env.action_space.shape[0],
                   ensemble_size=conf.ensemble_size,
                   size_segment=conf.segment,
                   activation=conf.activation, 

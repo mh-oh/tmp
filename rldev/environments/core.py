@@ -1,16 +1,13 @@
 
 
+import gymnasium
 from abc import *
 
 
-class Env(metaclass=ABCMeta):
+class Env(gymnasium.Env, metaclass=ABCMeta):
 
   @abstractmethod
-  def reset(self):
-    ...
-  
-  @abstractmethod
-  def seed(self, seed):
+  def reset(self, *, seed=None):
     ...
   
   @abstractmethod

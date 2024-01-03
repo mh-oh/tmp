@@ -1,6 +1,9 @@
 
 from rldev.environments.maze import point_maze
-from rldev.environments.registry import get
+def make(name):
+  import gymnasium
+  from rldev.environments.wrappers import GymApi
+  return GymApi(gymnasium.make(name))
 
 
 import gym
