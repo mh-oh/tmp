@@ -52,6 +52,10 @@ class Env(gymnasium.Env, metaclass=ABCMeta):
                              info):
     ...
   
+  @abstractmethod
+  def compute_progress(self, observation):
+    ...
+  
   def discover_target(self, observation):
     ...
   

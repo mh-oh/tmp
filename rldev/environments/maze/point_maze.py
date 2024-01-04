@@ -67,6 +67,9 @@ class PointMazeV0(Env):
                     continuing_task=True,
                     reset_target=False)
 
+    self._init_object_position = None
+    self._init_target_position = None
+
   @property
   @overrides
   def observation_space(self):
@@ -79,7 +82,10 @@ class PointMazeV0(Env):
 
   @overrides
   def reset(self, *, seed=None, options=None):
-    return self._env.reset(seed=seed, options=options)
+    observation, info = self._env.reset(seed=seed, options=options)
+    self._init_object_position = observation["achieved_goal"]
+    self._init_target_position = observation["desired_goal"]
+    return observation, info
 
   @overrides
   def step(self, action):
@@ -124,6 +130,24 @@ class PointMazeV0(Env):
                                action,
                                next_observation,
                                info)
+
+  @overrides
+  def compute_progress(self, observation):
+    
+    if ((self._init_object_position is None) or
+        (self._init_target_position is None)):
+      raise ValueError("you must call reset() before this call")
+
+    to_index = self._env.maze.cell_xy_to_rowcol
+    def distance(x, y):
+      return shortest_distance(self._layout, 
+                               to_index(x), to_index(y))
+
+    object, target = (
+      observation["achieved_goal"], observation["desired_goal"])
+    return (distance(object, target)
+            / distance(self._init_object_position,
+                       self._init_target_position))
 
 
 class PointMazeV1(PointMazeV0):
@@ -188,8 +212,7 @@ for variant in variants:
   ((env_key, env_path), 
    (layout_key, layout), reward_mode) = variant
 
-  id = f"{env_key}/{layout_key}-{reward_mode}"
-  register(id,
+  register(f"{env_key}/{layout_key}-{reward_mode}",
            env_path,
            max_episode_steps=300,
            kwargs={"layout": layout,
