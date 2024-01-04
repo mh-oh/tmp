@@ -168,104 +168,30 @@ class PointMazeV2(PointMazeV1):
     return np.exp(-distance)
 
 
-def register(id, **kwargs):
-  from gymnasium.envs.registration import register
-  return register(id,
-                  "rldev.environments.maze.point_maze:PointMazeV0",
-                  max_episode_steps=300,
-                  kwargs=kwargs)
-
-register("point-maze-v0/medium-2-1-sparse",
-         layout=MEDIUM_2_1, reward_mode="sparse")
-register("point-maze-v0/medium-2-1-dense",
-         layout=MEDIUM_2_1, reward_mode="dense")
-register("point-maze-v0/medium-2-2-sparse",
-         layout=MEDIUM_2_2, reward_mode="sparse")
-register("point-maze-v0/medium-2-2-dense",
-         layout=MEDIUM_2_2, reward_mode="dense")
-
-register("point-maze-v0/large-2-1-sparse",
-         layout=LARGE_2_1, reward_mode="sparse")
-register("point-maze-v0/large-2-1-dense",
-         layout=LARGE_2_1, reward_mode="dense")
-register("point-maze-v0/large-2-2-sparse",
-         layout=LARGE_2_2, reward_mode="sparse")
-register("point-maze-v0/large-2-2-dense",
-         layout=LARGE_2_2, reward_mode="dense")
-register("point-maze-v0/large-3-1-sparse",
-         layout=LARGE_3_1, reward_mode="sparse")
-register("point-maze-v0/large-3-1-dense",
-         layout=LARGE_3_1, reward_mode="dense")
-register("point-maze-v0/large-3-2-sparse",
-         layout=LARGE_3_2, reward_mode="sparse")
-register("point-maze-v0/large-3-2-dense",
-         layout=LARGE_3_2, reward_mode="dense")
+def path(cls):
+  return f"rldev.environments.maze.point_maze:{cls}"
+envs = [
+  ("point-maze-v0", path("PointMazeV0")),
+  ("point-maze-v1", path("PointMazeV1")),
+  ("point-maze-v2", path("PointMazeV2"))]
 
 
-def register(id, **kwargs):
-  from gymnasium.envs.registration import register
-  return register(id,
-                  "rldev.environments.maze.point_maze:PointMazeV1",
-                  max_episode_steps=300,
-                  kwargs=kwargs)
+from itertools import product
+from gymnasium.envs.registration import register
+from rldev.environments.maze.layout import registry as layouts
 
-register("point-maze-v1/medium-2-1-sparse",
-         layout=MEDIUM_2_1, reward_mode="sparse")
-register("point-maze-v1/medium-2-1-dense",
-         layout=MEDIUM_2_1, reward_mode="dense")
-register("point-maze-v1/medium-2-2-sparse",
-         layout=MEDIUM_2_2, reward_mode="sparse")
-register("point-maze-v1/medium-2-2-dense",
-         layout=MEDIUM_2_2, reward_mode="dense")
+variants = product(envs, 
+                   layouts.items(), 
+                   ["sparse", "dense"])
 
-register("point-maze-v1/large-2-1-sparse",
-         layout=LARGE_2_1, reward_mode="sparse")
-register("point-maze-v1/large-2-1-dense",
-         layout=LARGE_2_1, reward_mode="dense")
-register("point-maze-v1/large-2-2-sparse",
-         layout=LARGE_2_2, reward_mode="sparse")
-register("point-maze-v1/large-2-2-dense",
-         layout=LARGE_2_2, reward_mode="dense")
-register("point-maze-v1/large-3-1-sparse",
-         layout=LARGE_3_1, reward_mode="sparse")
-register("point-maze-v1/large-3-1-dense",
-         layout=LARGE_3_1, reward_mode="dense")
-register("point-maze-v1/large-3-2-sparse",
-         layout=LARGE_3_2, reward_mode="sparse")
-register("point-maze-v1/large-3-2-dense",
-         layout=LARGE_3_2, reward_mode="dense")
+for variant in variants:
+  ((env_key, env_path), 
+   (layout_key, layout), reward_mode) = variant
 
-
-def register(id, **kwargs):
-  from gymnasium.envs.registration import register
-  return register(id,
-                  "rldev.environments.maze.point_maze:PointMazeV2",
-                  max_episode_steps=300,
-                  kwargs=kwargs)
-
-register("point-maze-v2/medium-2-1-sparse",
-         layout=MEDIUM_2_1, reward_mode="sparse")
-register("point-maze-v2/medium-2-1-dense",
-         layout=MEDIUM_2_1, reward_mode="dense")
-register("point-maze-v2/medium-2-2-sparse",
-         layout=MEDIUM_2_2, reward_mode="sparse")
-register("point-maze-v2/medium-2-2-dense",
-         layout=MEDIUM_2_2, reward_mode="dense")
-
-register("point-maze-v2/large-2-1-sparse",
-         layout=LARGE_2_1, reward_mode="sparse")
-register("point-maze-v2/large-2-1-dense",
-         layout=LARGE_2_1, reward_mode="dense")
-register("point-maze-v2/large-2-2-sparse",
-         layout=LARGE_2_2, reward_mode="sparse")
-register("point-maze-v2/large-2-2-dense",
-         layout=LARGE_2_2, reward_mode="dense")
-register("point-maze-v2/large-3-1-sparse",
-         layout=LARGE_3_1, reward_mode="sparse")
-register("point-maze-v2/large-3-1-dense",
-         layout=LARGE_3_1, reward_mode="dense")
-register("point-maze-v2/large-3-2-sparse",
-         layout=LARGE_3_2, reward_mode="sparse")
-register("point-maze-v2/large-3-2-dense",
-         layout=LARGE_3_2, reward_mode="dense")
+  id = f"{env_key}/{layout_key}-{reward_mode}"
+  register(id,
+           env_path,
+           max_episode_steps=300,
+           kwargs={"layout": layout,
+                   "reward_mode": reward_mode})
 
