@@ -2,17 +2,20 @@
 import numpy as np
 import torch
 import torch as th
-import torch.nn as nn
-import torch.nn.functional as F
 import time
 
+from torch import nn
+from torch.nn import functional as F
+from torch.distributions.categorical import Categorical as Cat
+
+from dataclasses import dataclass
 from itertools import combinations, repeat
 from overrides import overrides
 from pathlib import Path
 from typing import *
 
 from rldev.agents.core import Node, Agent
-from rldev.agents.pref.models import EnsembleReward
+from rldev.agents.pref.models import Fusion
 from rldev.buffers.basic import EpisodicDictBuffer
 from rldev.utils import gym_types
 from rldev.utils import torch as thu
@@ -156,7 +159,7 @@ class RewardModel(Node):
                               "leaky-relu",
                               self.activation]).float().to(device)
 
-    self._r = EnsembleReward([thunk for _ in range(self.de)])
+    self._r = Fusion([thunk for _ in range(self.de)])
     self._r_optimizer = torch.optim.Adam(self._r.parameters(), lr=self.lr)
 
     self.mb_size = mb_size
@@ -191,10 +194,6 @@ class RewardModel(Node):
                                       (max_episodes + 1) * max_episode_steps,
                                       observation_space,
                                       action_space)
-
-  def softXEnt_loss(self, input, target):
-    logprobs = torch.nn.functional.log_softmax (input, dim = 1)
-    return  -(target * logprobs).sum() / input.shape[0]
   
   def change_batch(self, new_frac):
     self.mb_size = int(self.origin_mb_size*new_frac)
@@ -223,50 +222,64 @@ class RewardModel(Node):
                      done,
                      {})
 
-  def get_rank_probability(self, x_1, x_2):
-    # get probability x_1 > x_2
-    probs = []
-    for member in range(self.de):
-      probs.append(self.p_hat_member(x_1, x_2, member=member).cpu().numpy())
-    probs = np.array(probs)
-    
-    return np.mean(probs, axis=0), np.std(probs, axis=0)
-  
-  def get_entropy(self, x_1, x_2):
-    # get probability x_1 > x_2
-    probs = []
-    for member in range(self.de):
-      probs.append(self.p_hat_entropy(x_1, x_2, member=member).cpu().numpy())
-    probs = np.array(probs)
-    return np.mean(probs, axis=0), np.std(probs, axis=0)
+  def preference(self, first, second, index=None):
+    u"""Compute probability of `query.first` being prefered 
+    over `query.second`."""
 
-  def p_hat_member(self, x_1, x_2, member=-1):
-    # softmaxing to get the probabilities according to eqn 1
-    with torch.no_grad():
-      r_hat1 = self._r[member](thu.torch(x_1))
-      r_hat2 = self._r[member](thu.torch(x_2))
-      r_hat1 = r_hat1.sum(axis=1)
-      r_hat2 = r_hat2.sum(axis=1)
-      r_hat = torch.cat([r_hat1, r_hat2], axis=-1)
-    
-    # taking 0 index for probability x_1 > x_2
-    return F.softmax(r_hat, dim=-1)[:,0]
-  
-  def p_hat_entropy(self, x_1, x_2, member=-1):
-    # softmaxing to get the probabilities according to eqn 1
-    with torch.no_grad():
-      r_hat1 = self._r[member](thu.torch(x_1))
-      r_hat2 = self._r[member](thu.torch(x_2))
-      r_hat1 = r_hat1.sum(axis=1)
-      r_hat2 = r_hat2.sum(axis=1)
-      r_hat = torch.cat([r_hat1, r_hat2], axis=-1)
-    
-    ent = F.softmax(r_hat, dim=-1) * F.log_softmax(r_hat, dim=-1)
-    ent = ent.sum(axis=-1).abs()
-    return ent
+    def fn(i):
+      with torch.no_grad():
+        r_hat1 = self._r[i](thu.torch(first))
+        r_hat2 = self._r[i](thu.torch(second))
+        r_hat = torch.cat(
+          [r_hat1.sum(axis=1), r_hat2.sum(axis=1)], axis=-1)
+      return Cat(logits=r_hat).probs[..., 0]
 
-  def r_hat(self, x):
-    return self._r(th.from_numpy(x).float().to(device), reduce="mean")
+    if isinstance(index, int):
+      return fn(index)
+    else:
+      if index is not None:
+        raise ValueError(f"'index' must be 'int' or 'None'")
+      return np.mean(
+        np.stack([fn(i).cpu().numpy() 
+                  for i in range(self._r.n_estimators)]), axis=0)
+
+  def entropy(self, first, second, index=None):
+    u"""Compute Shannon entropy of this preference predictor."""
+
+    def fn(i):
+      with torch.no_grad():
+        r_hat1 = self._r[i](thu.torch(first))
+        r_hat2 = self._r[i](thu.torch(second))
+        r_hat = torch.cat(
+          [r_hat1.sum(axis=1), r_hat2.sum(axis=1)], axis=-1)
+      return Cat(logits=r_hat).entropy()
+
+    if isinstance(index, int):
+      return fn(index)
+    else:
+      if index is not None:
+        raise ValueError(f"'index' must be 'int' or 'None'")
+      return np.mean(
+        np.stack([fn(i).cpu().numpy() 
+                  for i in range(self._r.n_estimators)]), axis=0)
+
+  def disagree(self, first, second):
+    u"""Compute disagreement between ensembled estimators."""
+
+    def fn(i):
+      with torch.no_grad():
+        r_hat1 = self._r[i](thu.torch(first))
+        r_hat2 = self._r[i](thu.torch(second))
+        r_hat = torch.cat(
+          [r_hat1.sum(axis=1), r_hat2.sum(axis=1)], axis=-1)
+      return Cat(logits=r_hat).probs[..., 0]
+
+    return np.std(
+      np.stack([fn(i).cpu().numpy() 
+                for i in range(self._r.n_estimators)]), axis=0)
+
+  def predict_reward(self, input):
+    return self._r(input)
   
   @overrides
   def save(self, dir: Path):
@@ -282,7 +295,6 @@ class RewardModel(Node):
   def get_train_acc(self):
     ensemble_acc = np.array([0 for _ in range(self.de)])
     max_len = self.capacity if self.buffer_full else self.buffer_index
-    total_batch_index = np.random.permutation(max_len)
     batch_size = 256
     num_epochs = int(np.ceil(max_len/batch_size))
     
@@ -607,7 +619,7 @@ class RewardModel(Node):
         mb_size=num_init)
     
     # get final queries based on uncertainty
-    _, disagree = self.get_rank_probability(sa_t_1, sa_t_2)
+    disagree = self.disagree(sa_t_1, sa_t_2)
     top_k_index = (-disagree).argsort()[:num_init_half]
     r_t_1, sa_t_1 = r_t_1[top_k_index], sa_t_1[top_k_index]
     r_t_2, sa_t_2 = r_t_2[top_k_index], sa_t_2[top_k_index]
@@ -652,7 +664,7 @@ class RewardModel(Node):
     
     
     # get final queries based on uncertainty
-    entropy, _ = self.get_entropy(sa_t_1, sa_t_2)
+    entropy = self.entropy(sa_t_1, sa_t_2)
     top_k_index = (-entropy).argsort()[:num_init_half]
     r_t_1, sa_t_1 = r_t_1[top_k_index], sa_t_1[top_k_index]
     r_t_2, sa_t_2 = r_t_2[top_k_index], sa_t_2[top_k_index]
@@ -706,7 +718,7 @@ class RewardModel(Node):
         mb_size=self.mb_size*self.large_batch)
     
     # get final queries based on uncertainty
-    _, disagree = self.get_rank_probability(sa_t_1, sa_t_2)
+    disagree = self.disagree(sa_t_1, sa_t_2)
     top_k_index = (-disagree).argsort()[:self.mb_size]
     r_t_1, sa_t_1 = r_t_1[top_k_index], sa_t_1[top_k_index]
     r_t_2, sa_t_2 = r_t_2[top_k_index], sa_t_2[top_k_index]        
@@ -725,7 +737,7 @@ class RewardModel(Node):
         mb_size=self.mb_size*self.large_batch)
     
     # get final queries based on uncertainty
-    entropy, _ = self.get_entropy(sa_t_1, sa_t_2)
+    entropy = self.entropy(sa_t_1, sa_t_2)
     
     top_k_index = (-entropy).argsort()[:self.mb_size]
     r_t_1, sa_t_1 = r_t_1[top_k_index], sa_t_1[top_k_index]
@@ -745,7 +757,7 @@ class RewardModel(Node):
     sa_t_1, sa_t_2, r_t_1, r_t_2 =  self.get_every_aligned_queries()
     
     # get final queries based on uncertainty
-    entropy, _ = self.get_entropy(sa_t_1, sa_t_2)
+    entropy = self.entropy(sa_t_1, sa_t_2)
     
     top_k_index = (-entropy).argsort()[:self.mb_size]
     r_t_1, sa_t_1 = r_t_1[top_k_index], sa_t_1[top_k_index]
@@ -863,7 +875,11 @@ class RewardModel(Node):
         target_onehot += self.label_margin
         if sum(uniform_index) > 0:
           target_onehot[uniform_index] = 0.5
-        curr_loss = self.softXEnt_loss(r_hat, target_onehot)
+        def softxent(input, target):
+          return -(target *
+                   F.log_softmax(input, dim=1)).sum() / len(input)
+        curr_loss = softxent(r_hat, target_onehot)
+
         loss += curr_loss
         ensemble_losses[member].append(curr_loss.item())
         

@@ -408,7 +408,7 @@ class PEBBLEBuffer(DictBuffer):
       action = self._actions[batch]
 
       input = np.concatenate([observation, action], axis=-1)      
-      pred_reward = predictor.r_hat(input)
+      pred_reward = predictor.predict_reward(thu.torch(input))
       self._rewards[batch] = thu.numpy(pred_reward)[..., 0]
 
 
