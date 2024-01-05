@@ -113,3 +113,7 @@ conf.cluster.cls = "kmeans"
 conf.cluster.kwargs = dict(n_clusters=2)
 conf.segment = 10000
 register("entropy-aligned-kmeans-2-long", conf)
+
+conf = get("entropy-aligned-kmeans-2-long")
+conf.cluster.kwargs = dict(n_clusters=3)
+register("entropy-aligned-kmeans-3-long", conf)
