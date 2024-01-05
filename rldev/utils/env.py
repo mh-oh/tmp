@@ -139,8 +139,13 @@ def dict_container(size, spec):
     lambda spec: container(size, spec), spec)
 
 
-def flatten_space(space: gym_types.Space):
+def flatten_space(space):
   
+  if not isinstance(space, gym_types.Dict):
+    raise ValueError()
+  if not isinstance(space.spaces, OrderedDict):
+    raise AssertionError()
+
   low, high, dtype = [], [], []
   def append(x):
     low.append(x.low); high.append(x.high); dtype.append(x.dtype)
@@ -162,6 +167,9 @@ def flatten_space(space: gym_types.Space):
 
 def flatten_observation(space: gym_types.Dict, 
                         observation: Dict[str, Any]):
+
+  if not isinstance(space.spaces, OrderedDict):
+    raise AssertionError()
 
   xs = []
   for key, subspace in space.spaces.items():

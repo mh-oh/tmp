@@ -97,6 +97,8 @@ class Curve:
           records.append((data[x], data[y]))
       df = pd.DataFrame.from_records
       dfs.append(df(records, columns=[x, f"{label}.{i}"]))
+    if len(dfs) <= 1:
+      raise ValueError("len(runs) <= 1")
     df = join_outer(dfs, on=x)
 
     if not reduce in {"mean", "median"}:

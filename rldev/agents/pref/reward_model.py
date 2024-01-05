@@ -14,9 +14,10 @@ from typing import *
 from rldev.agents.core import Node, Agent
 from rldev.agents.pref.models import EnsembleReward
 from rldev.buffers.basic import EpisodicDictBuffer
+from rldev.utils import gym_types
 from rldev.utils import torch as thu
+from rldev.utils.env import flatten_space, flatten_observation
 from rldev.utils.structure import isiterable, pairwise
-
 
 device = 'cuda'
 
@@ -115,7 +116,6 @@ class RewardModel(Node):
                discard_outlier_goals,
                cluster,
                cluster_kwargs,
-               ds, da, 
                 ensemble_size=3, lr=3e-4, mb_size = 128, size_segment=1, 
                 env_maker=None, max_episodes=100, activation='tanh', capacity=5e5,  
                 large_batch=1, label_margin=0.0, 
@@ -124,7 +124,13 @@ class RewardModel(Node):
                 teacher_eps_skip=0, 
                 teacher_eps_equal=0):
     super().__init__(agent)
-      
+
+    da, = action_space.shape
+    if isinstance(observation_space, gym_types.Box):
+      ds, = observation_space.shape
+    elif isinstance(observation_space, gym_types.Dict):
+      ds, = flatten_space(observation_space).shape
+
     # train data is trajectories, must process to sa and s..   
     self.ds = ds
     self.da = da
@@ -340,7 +346,10 @@ class RewardModel(Node):
     def compat(segments_1, segments_2):
       print(segments_1.shape, segments_2.shape)
 
-      fn = self.agent._env.to_box_observation
+      def fn(observation):
+        env = self.agent._env
+        return flatten_observation(env.envs[0].observation_space,
+                                   observation)
 
       def _compat(segments):
         sa_t, r_t = [], []
@@ -419,7 +428,10 @@ class RewardModel(Node):
 
     def compat(segments_1, segments_2):
 
-      fn = self.agent._env.to_box_observation
+      def fn(observation):
+        env = self.agent._env
+        return flatten_observation(env.envs[0].observation_space,
+                                   observation)
 
       def _compat(segments):
         sa_t, r_t = [], []

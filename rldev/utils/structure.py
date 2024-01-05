@@ -59,6 +59,12 @@ def recursive_map(fn, *args):
       (key, recursive_map(fn, *x)) for key, x in zip_items(*args))
 
 
+def recursive_get(index, *args, copy=False):
+  def fn(x):
+    return x[index].copy() if copy else x[index]
+  return recursive_map(fn, *args)
+
+
 def copy(x):
   if isinstance(x, np.ndarray):
     return np.copy(x)
