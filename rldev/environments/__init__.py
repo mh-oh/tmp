@@ -1,5 +1,7 @@
 
 from rldev.environments.maze import point_maze
+from rldev.environments.registry import list_envs
+
 def make(name):
   import gymnasium
   import wandb

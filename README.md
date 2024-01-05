@@ -68,15 +68,7 @@ $ python experiments/ddpg+her.py ddpg+her --env=<environment> --num_envs=8 --see
 $ python experiments/pebble.py <conf> --env=<environment> --num_envs=1 --seed=1
 ```
 * ``<conf>`` Use 'uniform' or any other registered in ``rldev/configs/registry/pebble.py``.
-* ``<environment>`` Use one of the followings:
-  * point-maze-u :heavy_check_mark:
-  * point-maze-u-dense
-  * point-maze-o :heavy_check_mark:
-  * point-maze-o-dense
-  * button-press :heavy_check_mark:
-  * reach
-  * push
-  * pick-place
+* ``<environment>`` Run ``list_envs.py`` and choose one from the outputs.
 
 ## Using launcher to run multiple experiments at once
 

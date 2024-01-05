@@ -201,7 +201,7 @@ envs = [
 
 
 from itertools import product
-from gymnasium.envs.registration import register
+from rldev.environments.registry import register
 from rldev.environments.maze.layout import registry as layouts
 
 variants = product(envs, 
