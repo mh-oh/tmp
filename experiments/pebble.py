@@ -48,7 +48,7 @@ def main():
     return thunk
 
   env = DummyVecEnv([env_fn(conf.env, conf.seed)])
-  test_env = DummyVecEnv([env_fn(conf.env, conf.seed + 1234)])
+  test_env = DummyVecEnv([env_fn(conf.test_env, conf.seed + 1234)])
 
   buffer = (
     lambda agent:
