@@ -30,10 +30,26 @@ def assure_run(run):
   return run
 
 
+def load_df(run, *keys):
+  records = []
+  for data in assure_run(run).scan_history():
+    values = tuple(map(data.get, keys))
+    if any(value is not None for value in values):
+      records.append(tuple(values))
+  return pd.DataFrame.from_records(records)
+
+
+def ffill(df, columns):
+  df = df.copy()
+  df.loc[:, columns] = df.loc[:, columns].ffill()
+  return df
+
+
 class Curve:
 
-  def __init__(self, y, title=None, xmax=None, ymax=None):
+  def __init__(self, y, x="train/step", title=None, xmax=None, ymax=None):
     self.y = y
+    self.x = x
     self.title = title
   
   def draw(self, fig, ax, runs, labels=None):
@@ -56,16 +72,14 @@ class Curve:
       if len(set(labels)) != len(labels):
         raise ValueError()  
 
-    dfs, x = [], "train/step"
+    dfs, x = [], self.x
     for run, label in zip(runs, labels):
       if label == x:
         raise ValueError()
-      records = []
-      for data in assure_run(run).scan_history():
-        if data.get(y) is not None:
-          records.append((data[x], data[y]))
-      df = pd.DataFrame.from_records
-      dfs.append(df(records, columns=[x, label]))
+      df = load_df(run, x, y)
+      df.columns = [x, label]
+      df = ffill(df, columns=[x]).dropna()
+      dfs.append(df)
     df = join_outer(dfs, on=x)
 
     # Plot.
@@ -87,16 +101,14 @@ class Curve:
     if not isiterable(runs):
       runs = [runs]
 
-    dfs, x = [], "train/step"
+    dfs, x = [], self.x
     if label == x:
       raise ValueError()
     for i, run in enumerate(runs):
-      records = []
-      for data in assure_run(run).scan_history():
-        if data.get(y) is not None:
-          records.append((data[x], data[y]))
-      df = pd.DataFrame.from_records
-      dfs.append(df(records, columns=[x, f"{label}.{i}"]))
+      df = load_df(run, x, y)
+      df.columns = [x, f"{label}.{i}"]
+      df = ffill(df, columns=[x]).dropna()
+      dfs.append(df)
     if len(dfs) <= 1:
       raise ValueError("len(runs) <= 1")
     df = join_outer(dfs, on=x)
