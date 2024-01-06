@@ -77,7 +77,7 @@ class PEBBLE(PbRLAgent):
         self._reward_model.set_teacher_thres_equal(new_margin * self.config.teacher_eps_equal)
         
         # corner case: new total feed > max feed
-        if self._reward_model.mb_size + self._feedbacks > self.config.max_feedback:
+        if self._reward_model._budget + self._feedbacks > self.config.max_feedback:
           self._reward_model.set_batch(self.config.max_feedback - self._feedbacks)
             
         self.learn_reward()

@@ -40,6 +40,7 @@ conf.gradient_update = 2
 
 conf.query = Conf()
 conf.query.mode = "uniform"
+conf.query.kwargs = dict()
 
 conf.policy = Conf()
 conf.policy.kwargs = Conf()
