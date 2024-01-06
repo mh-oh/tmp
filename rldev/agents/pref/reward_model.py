@@ -460,13 +460,13 @@ class RewardModel(Node):
     
     th.save(self._r_optimizer, dir / "_r_optimizer.pt")
     th.save(self._r, dir / "_r.pt")
-    np.save(dir / "_segments_first", self.buffer_seg1)
-    np.save(dir / "_segments_second", self.buffer_seg2)
-    np.save(dir / "_segments_label", self.buffer_label)
-    with open(dir / "_segments_cursor.pkl", "wb") as fout:
-      pickle.dump(self.buffer_index, fout)
-    with open(dir / "_segments_full.pkl", "wb") as fout:
-      pickle.dump(self.buffer_full, fout)
+    # np.save(dir / "_segments_first", self.buffer_seg1)
+    # np.save(dir / "_segments_second", self.buffer_seg2)
+    # np.save(dir / "_segments_label", self.buffer_label)
+    # with open(dir / "_segments_cursor.pkl", "wb") as fout:
+    #   pickle.dump(self.buffer_index, fout)
+    # with open(dir / "_segments_full.pkl", "wb") as fout:
+    #   pickle.dump(self.buffer_full, fout)
 
   @overrides
   def load(self, dir: Path):
