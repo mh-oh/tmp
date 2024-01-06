@@ -8,7 +8,7 @@ from torch import nn
 from torch.nn import functional as F
 from torch.distributions.categorical import Categorical as Cat
 
-from dataclasses import dataclass
+from gymnasium import spaces
 from itertools import combinations, repeat
 from overrides import overrides
 from pathlib import Path
@@ -112,16 +112,17 @@ class RewardModel(Node):
 
   def __init__(self, 
                agent: Agent,
-               observation_space, 
-               action_space, 
-               max_episode_steps,
-               aligned_goals,
-               discard_outlier_goals,
-               cluster,
-               cluster_kwargs,
-                ensemble_size=3, lr=3e-4, mb_size = 128, size_segment=1, 
-                env_maker=None, max_episodes=100, activation='tanh', capacity=5e5,  
-                large_batch=1, label_margin=0.0, 
+               observation_space: spaces.Dict, 
+               action_space: spaces.Box, 
+               max_episode_steps: int,
+               fusion: int = 3,
+               activation: str = "tanh", 
+               lr: float = 3e-4, 
+               budget: int = 128,
+               segment_length: int = 1,
+               max_episodes: int = 100, 
+               capacity: int = 5e5,  
+               label_margin=0.0, 
                 teacher_beta=-1, teacher_gamma=1, 
                 teacher_eps_mistake=0, 
                 teacher_eps_skip=0, 
@@ -137,17 +138,17 @@ class RewardModel(Node):
     # train data is trajectories, must process to sa and s..   
     self.ds = ds
     self.da = da
-    self.de = ensemble_size
+    self.de = fusion
     self.lr = lr
     self.max_episodes = max_episodes
     self.activation = activation
-    if size_segment > max_episode_steps:
-      size_segment = max_episode_steps
-    self._segment_length = size_segment
+    if segment_length > max_episode_steps:
+      segment_length = max_episode_steps
+    self._segment_length = segment_length
     
     self.capacity = int(capacity)
-    self.buffer_seg1 = np.empty((self.capacity, size_segment, self.ds+self.da), dtype=np.float32)
-    self.buffer_seg2 = np.empty((self.capacity, size_segment, self.ds+self.da), dtype=np.float32)
+    self.buffer_seg1 = np.empty((self.capacity, segment_length, self.ds+self.da), dtype=np.float32)
+    self.buffer_seg2 = np.empty((self.capacity, segment_length, self.ds+self.da), dtype=np.float32)
     self.buffer_label = np.empty((self.capacity, 1), dtype=np.float32)
     self.buffer_index = 0
     self.buffer_full = False
@@ -162,11 +163,10 @@ class RewardModel(Node):
     self._r = Fusion([thunk for _ in range(self.de)])
     self._r_optimizer = torch.optim.Adam(self._r.parameters(), lr=self.lr)
 
-    self.mb_size = mb_size
-    self.origin_mb_size = mb_size
+    self._budget = budget
+    self.origin_mb_size = budget
     self.train_batch_size = 128
     self.CEloss = nn.CrossEntropyLoss()
-    self.large_batch = large_batch
     
     # new teacher
     self.teacher_beta = teacher_beta
@@ -181,14 +181,6 @@ class RewardModel(Node):
     self.label_target = 1 - 2*self.label_margin
 
     ####
-    self.aligned_goals = aligned_goals
-    self.discard_outlier_goals = discard_outlier_goals
-
-    from sklearn.cluster import DBSCAN, KMeans
-    self._cluster = {"dbscan": DBSCAN,
-                     "kmeans": KMeans}[cluster]
-    self._cluster_kwargs = cluster_kwargs
-
     self._max_episode_steps = max_episode_steps
     self._buffer = EpisodicDictBuffer(agent,
                                       agent._env.num_envs,
@@ -197,10 +189,10 @@ class RewardModel(Node):
                                       action_space)
   
   def change_batch(self, new_frac):
-    self.mb_size = int(self.origin_mb_size*new_frac)
+    self._budget = int(self.origin_mb_size*new_frac)
   
   def set_batch(self, new_batch):
-    self.mb_size = int(new_batch)
+    self._budget = int(new_batch)
       
   def set_teacher_thres_skip(self, new_margin):
     self.teacher_thres_skip = new_margin * self.teacher_eps_skip
@@ -311,12 +303,12 @@ class RewardModel(Node):
   def query(self, mode, **kwargs):
 
     fn = getattr(self, f"_query_{mode}")
-    first, second = fn(self.mb_size, **kwargs)
+    first, second = fn(self._budget, **kwargs)
 
     if len(first) != len(second):
       raise AssertionError(f"{len(first)} != {len(second)}")
-    if len(first) != self.mb_size:
-      raise AssertionError(f"{len(first)} != {self.mb_size}")
+    if len(first) != self._budget:
+      raise AssertionError(f"{len(first)} != {self._budget}")
     for segment in first:
       if len(segment) != self._segment_length:
         raise AssertionError(
@@ -340,35 +332,35 @@ class RewardModel(Node):
     first, second = self._random_pairs(episodes, n)
     return self._segment(first), self._segment(second)
 
-  def _query_entropy(self, n):
+  def _query_entropy(self, n, *, scale):
 
     episodes = self._episodes()
-    first, second = self._random_pairs(episodes, n * self.large_batch)
+    first, second = self._random_pairs(episodes, n * scale)
     first, second = self._segment(first), self._segment(second)
 
     entropy = self.entropy(first, second)
-    index = (-entropy).argsort()[:self.mb_size]
+    index = (-entropy).argsort()[:self._budget]
     return first[index], second[index]
   
-  def _query_disagree(self, n):
+  def _query_disagree(self, n, *, scale):
 
     episodes = self._episodes()
-    first, second = self._random_pairs(episodes, n * self.large_batch)
+    first, second = self._random_pairs(episodes, n * scale)
     first, second = self._segment(first), self._segment(second)
 
     disagree = self.disagree(first, second)
-    index = (-disagree).argsort()[:self.mb_size]
+    index = (-disagree).argsort()[:self._budget]
     return first[index], second[index]
   
   def _query_uniform_aligned(self, 
                              n, 
                              *, 
                              cluster, 
-                             cluster_kwargs):
+                             cluster_discard_outlier=True):
 
     episodes = self._episodes()
     first, second = self._every_aligned_pairs(
-      episodes, cluster=cluster, cluster_kwargs=cluster_kwargs)
+      episodes, cluster, cluster_discard_outlier)
     first, second = self._segment(first), self._segment(second)
     if len(first) != len(second):
       raise AssertionError(f"{len(first)} != {len(second)}")
@@ -380,11 +372,11 @@ class RewardModel(Node):
                              n, 
                              *, 
                              cluster, 
-                             cluster_kwargs):
+                             cluster_discard_outlier=True):
 
     episodes = self._episodes()
     first, second = self._every_aligned_pairs(
-      episodes, cluster=cluster, cluster_kwargs=cluster_kwargs)
+      episodes, cluster, cluster_discard_outlier)
     first, second = self._segment(first), self._segment(second)
     
     entropy = self.entropy(first, second)
@@ -417,14 +409,16 @@ class RewardModel(Node):
   
   def _every_aligned_pairs(self, 
                            episodes,
-                           *,
                            cluster,
-                           cluster_kwargs):
+                           cluster_discard_outlier):
     u"""Find every pairs of trajectories with matching 
     desired goals."""
 
-    _, clusters = self._compute_clusters(
-      episodes, cluster=cluster, cluster_kwargs=cluster_kwargs)
+    labels, clusters = self._compute_clusters(episodes, cluster)
+    if cluster_discard_outlier:
+      clusters = [
+        cluster for label, cluster in zip(labels, clusters) 
+          if label != -1]
 
     pairs = np.array([[*self._every_pairs(episodes)] 
                       for episodes in clusters], dtype=object)
@@ -437,11 +431,7 @@ class RewardModel(Node):
       return np.random.choice(len(episodes), size=n, replace=True)
     return (episodes[index()], episodes[index()])
 
-  def _compute_clusters(self, 
-                        episodes, 
-                        *, 
-                        cluster, 
-                        cluster_kwargs):
+  def _compute_clusters(self, episodes, cluster):
     u"""Cluster `episodes` based on their desired goals."""
 
     targets = []
@@ -450,12 +440,8 @@ class RewardModel(Node):
         episode.observation["desired_goal"], axis=0)
       targets.append(target)
 
-    from sklearn.cluster import DBSCAN, KMeans
-    cls = {"dbscan": DBSCAN,
-           "kmeans": KMeans}[cluster]
-
     targets = np.array(targets)
-    cluster = cls(**cluster_kwargs).fit(targets)
+    cluster = cluster.fit(targets)
 
     labels = cluster.labels_
     if labels.ndim != 1:
@@ -688,7 +674,7 @@ class RewardModel(Node):
     r_t_1  = self._batch_reward(first)
     r_t_2  = self._batch_reward(second)
     
-    assert len(sa_t_1) == self.mb_size
+    assert len(sa_t_1) == self._budget
     sum_r_t_1 = np.sum(r_t_1, axis=1)
     sum_r_t_2 = np.sum(r_t_2, axis=1)
     
@@ -744,7 +730,7 @@ class RewardModel(Node):
     raise
       
     # get queries
-    num_init = self.mb_size*self.large_batch
+    num_init = self._budget*self.large_batch
     sa_t_1, sa_t_2, r_t_1, r_t_2 =  self.get_queries(
         mb_size=num_init)
     
@@ -761,7 +747,7 @@ class RewardModel(Node):
     tot_sa = np.concatenate([tot_sa_1.reshape(max_len, -1),  
                               tot_sa_2.reshape(max_len, -1)], axis=1)
     
-    selected_index = KCenterGreedy(temp_sa, tot_sa, self.mb_size)
+    selected_index = KCenterGreedy(temp_sa, tot_sa, self._budget)
 
     r_t_1, sa_t_1 = r_t_1[selected_index], sa_t_1[selected_index]
     r_t_2, sa_t_2 = r_t_2[selected_index], sa_t_2[selected_index]
@@ -778,7 +764,7 @@ class RewardModel(Node):
   def kcenter_disagree_sampling(self):
     raise
       
-    num_init = self.mb_size*self.large_batch
+    num_init = self._budget*self.large_batch
     num_init_half = int(num_init*0.5)
     
     # get queries
@@ -805,7 +791,7 @@ class RewardModel(Node):
     tot_sa = np.concatenate([tot_sa_1.reshape(max_len, -1),  
                               tot_sa_2.reshape(max_len, -1)], axis=1)
     
-    selected_index = KCenterGreedy(temp_sa, tot_sa, self.mb_size)
+    selected_index = KCenterGreedy(temp_sa, tot_sa, self._budget)
     
     r_t_1, sa_t_1 = r_t_1[selected_index], sa_t_1[selected_index]
     r_t_2, sa_t_2 = r_t_2[selected_index], sa_t_2[selected_index]
@@ -822,7 +808,7 @@ class RewardModel(Node):
   def kcenter_entropy_sampling(self):
     raise
       
-    num_init = self.mb_size*self.large_batch
+    num_init = self._budget*self.large_batch
     num_init_half = int(num_init*0.5)
     
     # get queries
@@ -850,7 +836,7 @@ class RewardModel(Node):
     tot_sa = np.concatenate([tot_sa_1.reshape(max_len, -1),  
                               tot_sa_2.reshape(max_len, -1)], axis=1)
     
-    selected_index = KCenterGreedy(temp_sa, tot_sa, self.mb_size)
+    selected_index = KCenterGreedy(temp_sa, tot_sa, self._budget)
     
     r_t_1, sa_t_1 = r_t_1[selected_index], sa_t_1[selected_index]
     r_t_2, sa_t_2 = r_t_2[selected_index], sa_t_2[selected_index]
@@ -867,7 +853,7 @@ class RewardModel(Node):
   def uniform_sampling(self):
     # get queries
     sa_t_1, sa_t_2, r_t_1, r_t_2 =  self.get_queries(
-        mb_size=self.mb_size)
+        mb_size=self._budget)
         
     # get labels
     sa_t_1, sa_t_2, r_t_1, r_t_2, labels = self.get_label(
@@ -882,11 +868,11 @@ class RewardModel(Node):
     raise
     # get queries
     sa_t_1, sa_t_2, r_t_1, r_t_2 =  self.get_queries(
-        mb_size=self.mb_size*self.large_batch)
+        mb_size=self._budget*self.large_batch)
     
     # get final queries based on uncertainty
     disagree = self.disagree(sa_t_1, sa_t_2)
-    top_k_index = (-disagree).argsort()[:self.mb_size]
+    top_k_index = (-disagree).argsort()[:self._budget]
     r_t_1, sa_t_1 = r_t_1[top_k_index], sa_t_1[top_k_index]
     r_t_2, sa_t_2 = r_t_2[top_k_index], sa_t_2[top_k_index]        
     
@@ -901,12 +887,12 @@ class RewardModel(Node):
   def entropy_sampling(self):
     # get queries
     sa_t_1, sa_t_2, r_t_1, r_t_2 =  self.get_queries(
-        mb_size=self.mb_size*self.large_batch)
+        mb_size=self._budget*self.large_batch)
     
     # get final queries based on uncertainty
     entropy = self.entropy(sa_t_1, sa_t_2)
     
-    top_k_index = (-entropy).argsort()[:self.mb_size]
+    top_k_index = (-entropy).argsort()[:self._budget]
     r_t_1, sa_t_1 = r_t_1[top_k_index], sa_t_1[top_k_index]
     r_t_2, sa_t_2 = r_t_2[top_k_index], sa_t_2[top_k_index]
     
@@ -926,7 +912,7 @@ class RewardModel(Node):
     # get final queries based on uncertainty
     entropy = self.entropy(sa_t_1, sa_t_2)
     
-    top_k_index = (-entropy).argsort()[:self.mb_size]
+    top_k_index = (-entropy).argsort()[:self._budget]
     r_t_1, sa_t_1 = r_t_1[top_k_index], sa_t_1[top_k_index]
     r_t_2, sa_t_2 = r_t_2[top_k_index], sa_t_2[top_k_index]
     

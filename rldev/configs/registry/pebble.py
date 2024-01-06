@@ -1,4 +1,6 @@
 
+from sklearn.cluster import DBSCAN, KMeans
+
 from rldev.agents.pref.sac import DiagGaussianActor, DoubleQCritic
 from rldev.configs.xconf import Conf
 from rldev.configs.registry.registry import get, register
@@ -6,20 +8,19 @@ from rldev.configs.registry.registry import get, register
 
 conf = Conf()
 
-conf.segment = 50
+conf.fusion = 3
 conf.activation = 'tanh'
+conf.reward_lr = 0.0003
+conf.budget = 50
+conf.segment_length = 50
+
 conf.num_seed_steps = 1000
 conf.num_unsup_steps = 9000
 conf.num_interact = 5000
-conf.reward_lr = 0.0003
-conf.reward_batch = 50
 conf.reward_update = 10
-conf.feed_type = "uniform"
 conf.reset_update = 100
 conf.topK = 5
-conf.ensemble_size = 3
 conf.max_feedback = 10000
-conf.large_batch = 10
 conf.label_margin = 0.0
 conf.teacher_beta = -1
 conf.teacher_gamma = 1
@@ -37,15 +38,8 @@ conf.save_video = False
 conf.seed = 1
 conf.gradient_update = 2
 
-conf.aligned_goals = False
-conf.discard_outlier_goals = False # unused if aligned_goals=False
-conf.cluster = Conf() # unused if aligned_goals=False
-conf.cluster.cls = "dbscan"
-conf.cluster.kwargs = dict(eps=0.3)
-
 conf.query = Conf()
 conf.query.mode = "uniform"
-conf.query.kwargs = dict()
 
 conf.policy = Conf()
 conf.policy.kwargs = Conf()
@@ -79,55 +73,22 @@ conf.pi.kwargs.update_frequency = 1
 register("uniform", conf)
 
 conf = get("uniform")
-conf.segment = 10000
-register("uniform-long", conf)
-
-conf = get("uniform")
-conf.feed_type = "entropy"
 conf.query.mode = "entropy"
+conf.query.kwargs = dict(scale=10)
 register("entropy", conf)
 
-conf = get("entropy")
-conf.segment = 10000
-register("entropy-long", conf)
+conf = get("uniform")
+conf.query.mode = "disagree"
+conf.query.kwargs = dict(scale=10)
+register("disagree", conf)
 
 conf = get("uniform")
-conf.aligned_goals = True
-register("uniform-aligned-include-outliers", conf)
-
-conf = get("uniform-aligned-include-outliers")
-conf.discard_outlier_goals = True
-register("uniform-aligned", conf)
-
-conf = get("uniform-aligned")
-conf.feed_type = "greedy_aligned_entropy"
-register("entropy-aligned", conf)
-
-conf = get("entropy-aligned")
-conf.cluster.cls = "kmeans"
-conf.cluster.kwargs = dict(n_clusters=2)
-register("entropy-aligned-kmeans", conf)
-
-conf = get("uniform-aligned")
-conf.cluster.cls = "kmeans"
-conf.cluster.kwargs = dict(n_clusters=2)
-register("uniform-aligned-kmeans", conf)
-
-conf = get("entropy-aligned")
-conf.cluster.cls = "kmeans"
-conf.cluster.kwargs = dict(n_clusters=2)
-conf.segment = 10000
-register("entropy-aligned-kmeans-2-long", conf)
-
-conf = get("entropy-aligned-kmeans-2-long")
-conf.cluster.kwargs = dict(n_clusters=3)
-conf.query.kwargs = dict(cluster="kmeans",
-                         cluster_kwargs=dict(n_clusters=3))
-register("entropy-aligned-kmeans-3-long", conf)
+conf.query.mode = "uniform_aligned"
+conf.query.kwargs = dict(cluster=KMeans(n_clusters=3))
+register("uniform-kmeans-3", conf)
 
 conf = get("uniform")
-conf.segment = 10000
 conf.query.mode = "entropy_aligned"
-conf.query.kwargs = dict(cluster="kmeans",
-                         cluster_kwargs=dict(n_clusters=3))
-register("test", conf)
+conf.query.kwargs = dict(cluster=KMeans(n_clusters=3))
+register("entropy-kmeans-3", conf)
+
