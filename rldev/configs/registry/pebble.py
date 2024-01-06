@@ -43,6 +43,10 @@ conf.cluster = Conf() # unused if aligned_goals=False
 conf.cluster.cls = "dbscan"
 conf.cluster.kwargs = dict(eps=0.3)
 
+conf.query = Conf()
+conf.query.mode = "uniform"
+conf.query.kwargs = dict()
+
 conf.policy = Conf()
 conf.policy.kwargs = Conf()
 conf.policy.kwargs.discount = 0.99
@@ -80,6 +84,7 @@ register("uniform-long", conf)
 
 conf = get("uniform")
 conf.feed_type = "entropy"
+conf.query.mode = "entropy"
 register("entropy", conf)
 
 conf = get("entropy")
@@ -116,4 +121,13 @@ register("entropy-aligned-kmeans-2-long", conf)
 
 conf = get("entropy-aligned-kmeans-2-long")
 conf.cluster.kwargs = dict(n_clusters=3)
+conf.query.kwargs = dict(cluster="kmeans",
+                         cluster_kwargs=dict(n_clusters=3))
 register("entropy-aligned-kmeans-3-long", conf)
+
+conf = get("uniform")
+conf.segment = 10000
+conf.query.mode = "entropy_aligned"
+conf.query.kwargs = dict(cluster="kmeans",
+                         cluster_kwargs=dict(n_clusters=3))
+register("test", conf)

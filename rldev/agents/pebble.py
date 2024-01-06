@@ -105,32 +105,17 @@ class PEBBLE(PbRLAgent):
       self._policy.update(self._buffer, self.logger, self._step, 1)
 
   def learn_reward(self, first_flag=0):
-                
-    # get feedbacks
-    labeled_queries, noisy_queries = 0, 0
-    if first_flag == 1:
-      # if it is first time to get feedback, need to use random sampling
-      labeled_queries = self._reward_model.uniform_sampling()
-    else:
-      if self.config.feed_type == "uniform":
-        labeled_queries = self._reward_model.uniform_sampling()
-      elif self.config.feed_type == "disagree":
-        labeled_queries = self._reward_model.disagreement_sampling()
-      elif self.config.feed_type == "entropy":
-        labeled_queries = self._reward_model.entropy_sampling()
-      elif self.config.feed_type == "kcenter":
-        labeled_queries = self._reward_model.kcenter_sampling()
-      elif self.config.feed_type == "kcenter_disagree":
-        labeled_queries = self._reward_model.kcenter_disagree_sampling()
-      elif self.config.feed_type == "kcenter_entropy":
-        labeled_queries = self._reward_model.kcenter_entropy_sampling()
-      elif self.config.feed_type == "greedy_aligned_entropy":
-        labeled_queries = self._reward_model.greedy_aligned_entropy_sampling()
+
+    conf = self.config
+    def query():
+      fn = self._reward_model.query
+      if first_flag == 1:
+        return fn("uniform")
       else:
-        raise NotImplementedError
+        return fn(conf.query.mode, **conf.query.kwargs)
     
     self._feedbacks += self._reward_model.mb_size
-    self._labeled_feedbacks += labeled_queries
+    self._labeled_feedbacks += query()
     
     train_acc = 0
     if self._labeled_feedbacks > 0:

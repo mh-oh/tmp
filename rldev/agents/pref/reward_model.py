@@ -143,7 +143,7 @@ class RewardModel(Node):
     self.activation = activation
     if size_segment > max_episode_steps:
       size_segment = max_episode_steps
-    self.size_segment = size_segment
+    self._segment_length = size_segment
     
     self.capacity = int(capacity)
     self.buffer_seg1 = np.empty((self.capacity, size_segment, self.ds+self.da), dtype=np.float32)
@@ -189,6 +189,7 @@ class RewardModel(Node):
                      "kmeans": KMeans}[cluster]
     self._cluster_kwargs = cluster_kwargs
 
+    self._max_episode_steps = max_episode_steps
     self._buffer = EpisodicDictBuffer(agent,
                                       agent._env.num_envs,
                                       (max_episodes + 1) * max_episode_steps,
@@ -226,6 +227,9 @@ class RewardModel(Node):
     u"""Compute probability of `query.first` being prefered 
     over `query.second`."""
 
+    first  = self._batch_input(first)
+    second = self._batch_input(second)
+
     def fn(i):
       with torch.no_grad():
         r_hat1 = self._r[i](thu.torch(first))
@@ -245,6 +249,9 @@ class RewardModel(Node):
 
   def entropy(self, first, second, index=None):
     u"""Compute Shannon entropy of this preference predictor."""
+
+    first  = self._batch_input(first)
+    second = self._batch_input(second)
 
     def fn(i):
       with torch.no_grad():
@@ -266,6 +273,9 @@ class RewardModel(Node):
   def disagree(self, first, second):
     u"""Compute disagreement between ensembled estimators."""
 
+    first  = self._batch_input(first)
+    second = self._batch_input(second)
+
     def fn(i):
       with torch.no_grad():
         r_hat1 = self._r[i](thu.torch(first))
@@ -278,9 +288,185 @@ class RewardModel(Node):
       np.stack([fn(i).cpu().numpy() 
                 for i in range(self._r.n_estimators)]), axis=0)
 
+  def _batch_input(self, episodes):
+
+    def fn(observation):
+      env = self.agent._env.envs[0]
+      return flatten_observation(env.observation_space,
+                                 observation)
+    return np.stack([
+      np.concatenate([
+        fn(episode.observation), episode.action], axis=-1) 
+          for episode in episodes], axis=0)
+  
+  def _batch_reward(self, episodes):
+    return np.stack([
+      episode.reward for episode in episodes], axis=0)[..., np.newaxis]
+
   def predict_reward(self, input):
     return self._r(input)
+
+  u"""Sampling."""
+
+  def query(self, mode, **kwargs):
+
+    fn = getattr(self, f"_query_{mode}")
+    first, second = fn(self.mb_size, **kwargs)
+
+    if len(first) != len(second):
+      raise AssertionError(f"{len(first)} != {len(second)}")
+    if len(first) != self.mb_size:
+      raise AssertionError(f"{len(first)} != {self.mb_size}")
+    for segment in first:
+      if len(segment) != self._segment_length:
+        raise AssertionError(
+          f"{len(segment)} != {self._segment_length}")
+    for segment in second:
+      if len(segment) != self._segment_length:
+        raise AssertionError(
+          f"{len(segment)} != {self._segment_length}")
+
+    sa_t_1, sa_t_2, r_t_1, r_t_2, labels = self.get_label(
+        first, second)
+    
+    if len(labels) > 0:
+      self.put_queries(sa_t_1, sa_t_2, labels)
+    
+    return len(labels)
+
+  def _query_uniform(self, n):
+
+    episodes = self._episodes()
+    first, second = self._random_pairs(episodes, n)
+    return self._segment(first), self._segment(second)
+
+  def _query_entropy(self, n):
+
+    episodes = self._episodes()
+    first, second = self._random_pairs(episodes, n * self.large_batch)
+    first, second = self._segment(first), self._segment(second)
+
+    entropy = self.entropy(first, second)
+    index = (-entropy).argsort()[:self.mb_size]
+    return first[index], second[index]
   
+  def _query_disagree(self, n):
+
+    episodes = self._episodes()
+    first, second = self._random_pairs(episodes, n * self.large_batch)
+    first, second = self._segment(first), self._segment(second)
+
+    disagree = self.disagree(first, second)
+    index = (-disagree).argsort()[:self.mb_size]
+    return first[index], second[index]
+  
+  def _query_uniform_aligned(self, 
+                             n, 
+                             *, 
+                             cluster, 
+                             cluster_kwargs):
+
+    episodes = self._episodes()
+    first, second = self._every_aligned_pairs(
+      episodes, cluster=cluster, cluster_kwargs=cluster_kwargs)
+    first, second = self._segment(first), self._segment(second)
+    if len(first) != len(second):
+      raise AssertionError(f"{len(first)} != {len(second)}")
+
+    index = np.random.choice(len(first), size=n, replace=True)
+    return first[index], second[index]
+
+  def _query_entropy_aligned(self, 
+                             n, 
+                             *, 
+                             cluster, 
+                             cluster_kwargs):
+
+    episodes = self._episodes()
+    first, second = self._every_aligned_pairs(
+      episodes, cluster=cluster, cluster_kwargs=cluster_kwargs)
+    first, second = self._segment(first), self._segment(second)
+    
+    entropy = self.entropy(first, second)
+    index = (-entropy).argsort()[:n]
+    return first[index], second[index]
+  
+  u"""Aux functions."""
+
+  def _episodes(self):
+    return np.array(
+      list(self._buffer.get_episodes()), dtype=object)
+
+  def _segment(self, episodes, size=None):
+    u"""Segment each trajectory in `episodes`."""
+
+    size = size or self._segment_length
+    def get(episode):
+      steps = (np.arange(0, size) + 
+               np.random.randint(
+                 0, self._max_episode_steps - size + 1))
+      return episode.get(steps)
+    return np.array([get(episode) 
+                     for episode in episodes], dtype=object)
+  
+  def _every_pairs(self, episodes):
+    u"""Find every pairs of trajectories."""
+    pairs = np.array([[first, second]
+      for first, second in combinations(episodes, 2)], dtype=object)
+    return pairs[..., 0], pairs[..., 1]
+  
+  def _every_aligned_pairs(self, 
+                           episodes,
+                           *,
+                           cluster,
+                           cluster_kwargs):
+    u"""Find every pairs of trajectories with matching 
+    desired goals."""
+
+    _, clusters = self._compute_clusters(
+      episodes, cluster=cluster, cluster_kwargs=cluster_kwargs)
+
+    pairs = np.array([[*self._every_pairs(episodes)] 
+                      for episodes in clusters], dtype=object)
+    return (np.concatenate(pairs[:, 0], axis=0),
+            np.concatenate(pairs[:, 1], axis=0))
+
+  def _random_pairs(self, episodes, n):
+    u"""Sample `n` pairs randomly from `episodes`."""
+    def index():
+      return np.random.choice(len(episodes), size=n, replace=True)
+    return (episodes[index()], episodes[index()])
+
+  def _compute_clusters(self, 
+                        episodes, 
+                        *, 
+                        cluster, 
+                        cluster_kwargs):
+    u"""Cluster `episodes` based on their desired goals."""
+
+    targets = []
+    for episode in episodes:
+      target, = np.unique(
+        episode.observation["desired_goal"], axis=0)
+      targets.append(target)
+
+    from sklearn.cluster import DBSCAN, KMeans
+    cls = {"dbscan": DBSCAN,
+           "kmeans": KMeans}[cluster]
+
+    targets = np.array(targets)
+    cluster = cls(**cluster_kwargs).fit(targets)
+
+    labels = cluster.labels_
+    if labels.ndim != 1:
+      raise AssertionError(f"{labels.ndim} != 1")
+
+    index = np.argsort(labels)
+    unique, (_, *sections) = np.unique(labels[index],
+                                       return_index=True)
+    return (unique.tolist(),
+            np.split(episodes[index], sections))
+
   @overrides
   def save(self, dir: Path):
     dir.mkdir(parents=True, exist_ok=True)
@@ -329,22 +515,9 @@ class RewardModel(Node):
       list(self._buffer.get_episodes()), dtype=object)
     print("every episodes", _episodes.shape)
 
-    x = set(len(episode) for episode in _episodes)
-    if len(x) != 1:
-      raise
-    episode_steps = x.pop()
-
-    def segment(episodes, size):
-      def get(episode):
-        steps = (np.arange(0, self.size_segment) + 
-                 np.random.randint(0, episode_steps - size + 1))
-        return episode.get(steps)
-      return np.array(
-        [get(episode) for episode in episodes], dtype=object)
-
     def queries(episodes, segment_size):
       print("episodes with an algined goal", episodes.shape)
-      segments = segment(episodes, segment_size)
+      segments = self._segment(episodes, segment_size)
       segments_1, segments_2 = [], []
       c = list(combinations(segments, 2))
       print("combinations", len(c))
@@ -392,7 +565,7 @@ class RewardModel(Node):
     print(labels)
     for g in labels:
       mask = cluster.labels_ == g
-      sa_t_1, sa_t_2, r_t_1, r_t_2 = compat(*queries(_episodes[mask], self.size_segment))
+      sa_t_1, sa_t_2, r_t_1, r_t_2 = compat(*queries(_episodes[mask], self._segment_length))
       _sa_t_1.append(sa_t_1)
       _sa_t_2.append(sa_t_2)
       _r_t_1.append(r_t_1)
@@ -412,23 +585,10 @@ class RewardModel(Node):
       list(self._buffer.get_episodes()), dtype=object)
     print(_episodes.shape)
 
-    x = set(len(episode) for episode in _episodes)
-    if len(x) != 1:
-      raise
-    episode_steps = x.pop()
-
-    def segment(episodes, size):
-      def get(episode):
-        steps = (np.arange(0, self.size_segment) + 
-                 np.random.randint(0, episode_steps - size + 1))
-        return episode.get(steps)
-      return np.array(
-        [get(episode) for episode in episodes], dtype=object)
-
     def queries(episodes, batch_size, segment_size):
 
-      segments_1 = segment(episodes, size=segment_size)
-      segments_2 = segment(episodes, size=segment_size)
+      segments_1 = self._segment(episodes, size=segment_size)
+      segments_2 = self._segment(episodes, size=segment_size)
 
       assert len(segments_1) == len(segments_2)
       def batch_index():
@@ -458,7 +618,7 @@ class RewardModel(Node):
       return sa_t_1, sa_t_2, r_t_1, r_t_2
 
     if not self.aligned_goals:
-      return compat(*queries(_episodes, mb_size, self.size_segment))
+      return compat(*queries(_episodes, mb_size, self._segment_length))
 
     goals = []
     for episode in _episodes:
@@ -482,7 +642,7 @@ class RewardModel(Node):
       g = labels.pop()
 
       mask = cluster.labels_ == g
-      sa_t_1, sa_t_2, r_t_1, r_t_2 = compat(*queries(_episodes[mask], n, self.size_segment))
+      sa_t_1, sa_t_2, r_t_1, r_t_2 = compat(*queries(_episodes[mask], n, self._segment_length))
       print(n, len(sa_t_1))
       _sa_t_1.append(sa_t_1)
       _sa_t_2.append(sa_t_2)
@@ -520,7 +680,14 @@ class RewardModel(Node):
       np.copyto(self.buffer_label[self.buffer_index:next_index], labels)
       self.buffer_index = next_index
           
-  def get_label(self, sa_t_1, sa_t_2, r_t_1, r_t_2):
+  # def get_label(self, sa_t_1, sa_t_2, r_t_1, r_t_2):
+  def get_label(self, first, second):
+    
+    sa_t_1 = self._batch_input(first)
+    sa_t_2 = self._batch_input(second)
+    r_t_1  = self._batch_reward(first)
+    r_t_2  = self._batch_reward(second)
+    
     assert len(sa_t_1) == self.mb_size
     sum_r_t_1 = np.sum(r_t_1, axis=1)
     sum_r_t_2 = np.sum(r_t_2, axis=1)
