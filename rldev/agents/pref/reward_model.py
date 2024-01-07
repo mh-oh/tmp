@@ -10,7 +10,7 @@ from torch.nn import functional as F
 from torch.distributions.categorical import Categorical as Cat
 
 from gymnasium import spaces
-from itertools import combinations, repeat
+from itertools import combinations
 from overrides import overrides
 from pathlib import Path
 from typing import *
@@ -21,40 +21,7 @@ from rldev.buffers.basic import EpisodicDictBuffer
 from rldev.utils import gym_types
 from rldev.utils import torch as thu
 from rldev.utils.env import flatten_space, flatten_observation
-from rldev.utils.structure import isiterable, pairwise
-
-device = 'cuda'
-
-
-class MLP(nn.Module):
-
-  def __init__(self, dims, activations):
-    super().__init__()
-    
-    if not isiterable(dims):
-      raise ValueError(f"'dims' should be iterable")
-
-    layers = len(dims) - 1
-    if not isiterable(activations):
-      activations = repeat(activations, times=layers)
-
-    def map(x):
-      if not isinstance(x, str):
-        return x
-      return {"leaky-relu": nn.LeakyReLU,
-              "tanh": nn.Tanh,
-              "sigmoid": nn.Sigmoid,
-              "relu": nn.ReLU}[x]
-    activations = [map(x) for x in activations]
-
-    structure = []
-    for (isize, osize), cls in zip(pairwise(dims), activations):
-      structure.extend((nn.Linear(isize, osize),
-                        cls()))
-    self.body = nn.Sequential(*structure)
-
-  def forward(self, input):
-    return self.body(input)
+from rldev.utils.nn import _MLP as MLP
 
 
 def KCenterGreedy(obs, full_obs, num_new_sample):
@@ -98,7 +65,7 @@ def compute_smallest_dist(obs, full_obs):
           if start < len(full_obs):
             end = (idx + 1) * batch_size
             dist = torch.norm(
-                obs[full_start:full_end, None, :].to(device) - full_obs[None, start:end, :].to(device), dim=-1, p=2
+                obs[full_start:full_end, None, :].to(thu.device()) - full_obs[None, start:end, :].to(thu.device()), dim=-1, p=2
             )
             dists.append(dist)
         dists = torch.cat(dists, dim=1)
@@ -159,7 +126,7 @@ class RewardModel(Node):
                  activations=["leaky-relu",
                               "leaky-relu",
                               "leaky-relu",
-                              self.activation]).float().to(device)
+                              self.activation]).float().to(thu.device())
 
     self._r = Fusion([thunk for _ in range(self.de)])
     self._r_optimizer = torch.optim.Adam(self._r.parameters(), lr=self.lr)
@@ -493,7 +460,7 @@ class RewardModel(Node):
       sa_t_1 = self.buffer_seg1[epoch*batch_size:last_index]
       sa_t_2 = self.buffer_seg2[epoch*batch_size:last_index]
       labels = self.buffer_label[epoch*batch_size:last_index]
-      labels = torch.from_numpy(labels.flatten()).long().to(device)
+      labels = torch.from_numpy(labels.flatten()).long().to(thu.device())
       total += labels.size(0)
       for member in range(self.de):
         # get logits
@@ -966,7 +933,7 @@ class RewardModel(Node):
         sa_t_1 = self.buffer_seg1[idxs]
         sa_t_2 = self.buffer_seg2[idxs]
         labels = self.buffer_label[idxs]
-        labels = torch.from_numpy(labels.flatten()).long().to(device)
+        labels = torch.from_numpy(labels.flatten()).long().to(thu.device())
         
         if member == 0:
           total += labels.size(0)
@@ -1023,7 +990,7 @@ class RewardModel(Node):
         sa_t_1 = self.buffer_seg1[idxs]
         sa_t_2 = self.buffer_seg2[idxs]
         labels = self.buffer_label[idxs]
-        labels = torch.from_numpy(labels.flatten()).long().to(device)
+        labels = torch.from_numpy(labels.flatten()).long().to(thu.device())
         
         if member == 0:
           total += labels.size(0)

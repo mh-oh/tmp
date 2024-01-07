@@ -1,11 +1,15 @@
 
 import numpy as np
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
+
+from itertools import repeat
+
+from torch.distributions import Normal, OneHotCategorical
+from torch import nn
+from torch.nn import functional as F
 
 from rldev.utils.copy import dillcopy
-from torch.distributions import Normal, OneHotCategorical
+from rldev.utils.structure import isiterable, pairwise
 
 
 def freeze(f):
@@ -49,6 +53,36 @@ class GELU(nn.Module):
 ######################################################################################################
 # Basic MLP, for non actor/critic things
 ######################################################################################################
+
+class _MLP(nn.Module):
+
+  def __init__(self, dims, activations):
+    super().__init__()
+    
+    if not isiterable(dims):
+      raise ValueError(f"'dims' should be iterable")
+
+    layers = len(dims) - 1
+    if not isinstance(activations, (list, tuple)):
+      activations = repeat(activations, times=layers)
+
+    def map(x):
+      if not isinstance(x, str):
+        return x
+      return {"leaky-relu": nn.LeakyReLU,
+              "tanh": nn.Tanh,
+              "sigmoid": nn.Sigmoid,
+              "relu": nn.ReLU}[x]
+    activations = [map(x) for x in activations]
+
+    structure = []
+    for (isize, osize), cls in zip(pairwise(dims), activations):
+      structure.extend((nn.Linear(isize, osize),
+                        cls()))
+    self.body = nn.Sequential(*structure)
+
+  def forward(self, input):
+    return self.body(input)
 
 class MLP(nn.Module):
   """Standard feedforward network.
