@@ -118,7 +118,7 @@ $ python plot.py
 - [ ] In ``plot.py``, implement ``xmax`` parameter for ``curve`` and ``curve_reduce``.
 - [x] Goal-aligned entropy sampling for PEBBLE.
 - [ ] In DDPG, ``gradient_steps == 1``.
-- [ ] KMEANS clustering for goal-aligned queries.
+- [x] KMEANS clustering for goal-aligned queries.
 - [ ] For DBSCAN, what ``eps`` parameters to use for each of the following envrionments?
   - point-maze-o
   - point-maze-o-3
