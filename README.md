@@ -46,6 +46,15 @@ DDPG and HER are based on the version introduced by OpenAI ``baselines`` ([paper
 
 Every experiments are tracked by https://wandb.ai/rldev/experiments.
 
+We exclude large files from wandb cloud synchronization.
+To to this, run the below command before running experiments.
+
+```console
+$ export WANDB_IGNORE_GLOBS="*.nosync"
+```
+
+By doing so, every files with ``.nosync`` as suffix will not be synchronized.
+
 ### DDPG and DDPG+HER
 ```console
 $ python experiments/ddpg.py ddpg --env=<environment> --num_envs=8 --seed=1
