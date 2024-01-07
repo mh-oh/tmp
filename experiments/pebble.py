@@ -101,7 +101,7 @@ def main():
                  buffer,
                  reward_model)
 
-  agent.run(conf.num_eval_episodes)
+  agent.run(conf.test_episodes)
 
 
 if __name__ == "__main__":
