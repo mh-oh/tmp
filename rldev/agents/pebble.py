@@ -53,7 +53,7 @@ class PEBBLE(PbRLAgent):
       self._reward_model.change_batch(frac(self._step))
       
       # update margin --> not necessary / will be updated soon
-      new_margin = np.mean(self._episode_returns) * (self.config.segment_length / self._env._max_episode_steps)
+      new_margin = np.mean(self._episode_returns) * (self.config.segment / self._env._max_episode_steps)
       self._reward_model.set_teacher_thres_skip(new_margin)
       self._reward_model.set_teacher_thres_equal(new_margin)
       
@@ -72,12 +72,12 @@ class PEBBLE(PbRLAgent):
         self._reward_model.change_batch(frac(self._step))
         
         # update margin --> not necessary / will be updated soon
-        new_margin = np.mean(self._episode_returns) * (self.config.segment_length / self._env._max_episode_steps)
+        new_margin = np.mean(self._episode_returns) * (self.config.segment / self._env._max_episode_steps)
         self._reward_model.set_teacher_thres_skip(new_margin * self.config.teacher_eps_skip)
         self._reward_model.set_teacher_thres_equal(new_margin * self.config.teacher_eps_equal)
         
         # corner case: new total feed > max feed
-        if self._reward_model._budget + self._feedbacks > self.config.max_feedback:
+        if self._reward_model._effective_budget + self._feedbacks > self.config.max_feedback:
           self._reward_model.set_batch(self.config.max_feedback - self._feedbacks)
             
         self.learn_reward()
@@ -105,17 +105,18 @@ class PEBBLE(PbRLAgent):
       self._policy.update(self._buffer, self.logger, self._step, 1)
 
   def learn_reward(self, first_flag=0):
-
-    conf = self.config
-    def query():
-      fn = self._reward_model.query
-      if first_flag == 1:
-        return fn("uniform")
-      else:
-        return fn(conf.query.mode, **conf.query.kwargs)
     
-    self._feedbacks += self._reward_model._budget
-    self._labeled_feedbacks += query()
+    conf = self.config
+    # get feedbacks
+    labeled_queries, noisy_queries = 0, 0
+    if first_flag == 1:
+      # if it is first time to get feedback, need to use random sampling
+      labeled_queries = self._reward_model.query(conf.query.starter_mode, **conf.query.starter_kwargs)
+    else:
+      labeled_queries = self._reward_model.query(conf.query.mode, **conf.query.kwargs)
+    
+    self._feedbacks += self._reward_model._effective_budget
+    self._labeled_feedbacks += labeled_queries
     
     train_acc = 0
     if self._labeled_feedbacks > 0:

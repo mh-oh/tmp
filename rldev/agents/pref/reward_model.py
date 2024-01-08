@@ -1,16 +1,13 @@
 
 import numpy as np
-import pickle
 import torch
 import torch as th
+import torch.nn as nn
+import torch.nn.functional as F
 import time
 
-from torch import nn
-from torch.nn import functional as F
-from torch.distributions.categorical import Categorical as Cat
-
 from gymnasium import spaces
-from itertools import combinations
+from itertools import combinations, repeat
 from overrides import overrides
 from pathlib import Path
 from typing import *
@@ -21,7 +18,40 @@ from rldev.buffers.basic import EpisodicDictBuffer
 from rldev.utils import gym_types
 from rldev.utils import torch as thu
 from rldev.utils.env import flatten_space, flatten_observation
-from rldev.utils.nn import _MLP as MLP
+from rldev.utils.structure import isiterable, pairwise
+
+device = 'cuda'
+
+
+class MLP(nn.Module):
+
+  def __init__(self, dims, activations):
+    super().__init__()
+    
+    if not isiterable(dims):
+      raise ValueError(f"'dims' should be iterable")
+
+    layers = len(dims) - 1
+    if not isiterable(activations):
+      activations = repeat(activations, times=layers)
+
+    def map(x):
+      if not isinstance(x, str):
+        return x
+      return {"leaky-relu": nn.LeakyReLU,
+              "tanh": nn.Tanh,
+              "sigmoid": nn.Sigmoid,
+              "relu": nn.ReLU}[x]
+    activations = [map(x) for x in activations]
+
+    structure = []
+    for (isize, osize), cls in zip(pairwise(dims), activations):
+      structure.extend((nn.Linear(isize, osize),
+                        cls()))
+    self.body = nn.Sequential(*structure)
+
+  def forward(self, input):
+    return self.body(input)
 
 
 def KCenterGreedy(obs, full_obs, num_new_sample):
@@ -65,7 +95,7 @@ def compute_smallest_dist(obs, full_obs):
           if start < len(full_obs):
             end = (idx + 1) * batch_size
             dist = torch.norm(
-                obs[full_start:full_end, None, :].to(thu.device()) - full_obs[None, start:end, :].to(thu.device()), dim=-1, p=2
+                obs[full_start:full_end, None, :].to(device) - full_obs[None, start:end, :].to(device), dim=-1, p=2
             )
             dists.append(dist)
         dists = torch.cat(dists, dim=1)
@@ -83,18 +113,19 @@ class RewardModel(Node):
                observation_space: spaces.Dict, 
                action_space: spaces.Box, 
                max_episode_steps: int,
-               fusion: int = 3,
-               activation: str = "tanh", 
+               fusion: int,
+               activation: str,
                lr: float = 3e-4, 
-               budget: int = 128,
-               segment_length: int = 1,
+               budget: int = 128, 
+               segment_length: int = 1, 
                max_episodes: int = 100, 
-               capacity: int = 5e5,  
+               capacity: float = 5e5,  
                label_margin=0.0, 
-                teacher_beta=-1, teacher_gamma=1, 
-                teacher_eps_mistake=0, 
-                teacher_eps_skip=0, 
-                teacher_eps_equal=0):
+               teacher_beta=-1, 
+               teacher_gamma=1, 
+               teacher_eps_mistake=0, 
+               teacher_eps_skip=0, 
+               teacher_eps_equal=0):
     super().__init__(agent)
 
     da, = action_space.shape
@@ -112,7 +143,8 @@ class RewardModel(Node):
     self.activation = activation
     if segment_length > max_episode_steps:
       segment_length = max_episode_steps
-    self._segment_length = segment_length
+    self.size_segment = segment_length
+    self._max_episode_steps = max_episode_steps
     
     self.capacity = int(capacity)
     self.buffer_seg1 = np.empty((self.capacity, segment_length, self.ds+self.da), dtype=np.float32)
@@ -126,13 +158,13 @@ class RewardModel(Node):
                  activations=["leaky-relu",
                               "leaky-relu",
                               "leaky-relu",
-                              self.activation]).float().to(thu.device())
+                              self.activation]).float().to(device)
 
     self._r = Fusion([thunk for _ in range(self.de)])
     self._r_optimizer = torch.optim.Adam(self._r.parameters(), lr=self.lr)
 
+    self._effective_budget = budget
     self._budget = budget
-    self.origin_mb_size = budget
     self.train_batch_size = 128
     self.CEloss = nn.CrossEntropyLoss()
     
@@ -149,18 +181,22 @@ class RewardModel(Node):
     self.label_target = 1 - 2*self.label_margin
 
     ####
-    self._max_episode_steps = max_episode_steps
+
     self._buffer = EpisodicDictBuffer(agent,
                                       agent._env.num_envs,
                                       (max_episodes + 1) * max_episode_steps,
                                       observation_space,
                                       action_space)
+
+  def softXEnt_loss(self, input, target):
+    logprobs = torch.nn.functional.log_softmax (input, dim = 1)
+    return  -(target * logprobs).sum() / input.shape[0]
   
   def change_batch(self, new_frac):
-    self._budget = int(self.origin_mb_size*new_frac)
+    self._effective_budget = int(self._budget*new_frac)
   
   def set_batch(self, new_batch):
-    self._budget = int(new_batch)
+    self._effective_budget = int(new_batch)
       
   def set_teacher_thres_skip(self, new_margin):
     self.teacher_thres_skip = new_margin * self.teacher_eps_skip
@@ -183,111 +219,153 @@ class RewardModel(Node):
                      done,
                      {})
 
-  def preference(self, first, second, index=None):
-    u"""Compute probability of `query.first` being prefered 
-    over `query.second`."""
-
-    first  = self._batch_input(first)
-    second = self._batch_input(second)
-
-    def fn(i):
-      with torch.no_grad():
-        r_hat1 = self._r[i](thu.torch(first))
-        r_hat2 = self._r[i](thu.torch(second))
-        r_hat = torch.cat(
-          [r_hat1.sum(axis=1), r_hat2.sum(axis=1)], axis=-1)
-      return Cat(logits=r_hat).probs[..., 0]
-
-    if isinstance(index, int):
-      return fn(index)
-    else:
-      if index is not None:
-        raise ValueError(f"'index' must be 'int' or 'None'")
-      return np.mean(
-        np.stack([fn(i).cpu().numpy() 
-                  for i in range(self._r.n_estimators)]), axis=0)
-
-  def entropy(self, first, second, index=None):
-    u"""Compute Shannon entropy of this preference predictor."""
-
-    first  = self._batch_input(first)
-    second = self._batch_input(second)
-
-    def fn(i):
-      with torch.no_grad():
-        r_hat1 = self._r[i](thu.torch(first))
-        r_hat2 = self._r[i](thu.torch(second))
-        r_hat = torch.cat(
-          [r_hat1.sum(axis=1), r_hat2.sum(axis=1)], axis=-1)
-      return Cat(logits=r_hat).entropy()
-
-    if isinstance(index, int):
-      return fn(index)
-    else:
-      if index is not None:
-        raise ValueError(f"'index' must be 'int' or 'None'")
-      return np.mean(
-        np.stack([fn(i).cpu().numpy() 
-                  for i in range(self._r.n_estimators)]), axis=0)
-
-  def disagree(self, first, second):
-    u"""Compute disagreement between ensembled estimators."""
-
-    first  = self._batch_input(first)
-    second = self._batch_input(second)
-
-    def fn(i):
-      with torch.no_grad():
-        r_hat1 = self._r[i](thu.torch(first))
-        r_hat2 = self._r[i](thu.torch(second))
-        r_hat = torch.cat(
-          [r_hat1.sum(axis=1), r_hat2.sum(axis=1)], axis=-1)
-      return Cat(logits=r_hat).probs[..., 0]
-
-    return np.std(
-      np.stack([fn(i).cpu().numpy() 
-                for i in range(self._r.n_estimators)]), axis=0)
-
-  def _batch_input(self, episodes):
-
-    def fn(observation):
-      env = self.agent._env.envs[0]
-      return flatten_observation(env.observation_space,
-                                 observation)
-    return np.stack([
-      np.concatenate([
-        fn(episode.observation), episode.action], axis=-1) 
-          for episode in episodes], axis=0)
+  def get_rank_probability(self, x_1, x_2):
+    # get probability x_1 > x_2
+    probs = []
+    for member in range(self.de):
+      probs.append(self.p_hat_member(x_1, x_2, member=member).cpu().numpy())
+    probs = np.array(probs)
+    
+    return np.mean(probs, axis=0), np.std(probs, axis=0)
   
-  def _batch_reward(self, episodes):
-    return np.stack([
-      episode.reward for episode in episodes], axis=0)[..., np.newaxis]
+  def get_entropy(self, x_1, x_2):
+    # get probability x_1 > x_2
+    probs = []
+    for member in range(self.de):
+      probs.append(self.p_hat_entropy(x_1, x_2, member=member).cpu().numpy())
+    probs = np.array(probs)
+    return np.mean(probs, axis=0), np.std(probs, axis=0)
 
-  def predict_reward(self, input):
-    return self._r(input)
+  def p_hat_member(self, x_1, x_2, member=-1):
+    # softmaxing to get the probabilities according to eqn 1
+    with torch.no_grad():
+      r_hat1 = self._r[member](thu.torch(x_1))
+      r_hat2 = self._r[member](thu.torch(x_2))
+      r_hat1 = r_hat1.sum(axis=1)
+      r_hat2 = r_hat2.sum(axis=1)
+      r_hat = torch.cat([r_hat1, r_hat2], axis=-1)
+    
+    # taking 0 index for probability x_1 > x_2
+    return F.softmax(r_hat, dim=-1)[:,0]
+  
+  def p_hat_entropy(self, x_1, x_2, member=-1):
+    # softmaxing to get the probabilities according to eqn 1
+    with torch.no_grad():
+      r_hat1 = self._r[member](thu.torch(x_1))
+      r_hat2 = self._r[member](thu.torch(x_2))
+      r_hat1 = r_hat1.sum(axis=1)
+      r_hat2 = r_hat2.sum(axis=1)
+      r_hat = torch.cat([r_hat1, r_hat2], axis=-1)
+    
+    ent = F.softmax(r_hat, dim=-1) * F.log_softmax(r_hat, dim=-1)
+    ent = ent.sum(axis=-1).abs()
+    return ent
 
-  u"""Sampling."""
+  def r_hat(self, x):
+    return self._r(th.from_numpy(x).float().to(device), reduce="mean")
+  
+  @overrides
+  def save(self, dir: Path):
+    dir.mkdir(parents=True, exist_ok=True)
+    
+    th.save(self._r_optimizer, dir / "_r_optimizer.pt")
+    th.save(self._r, dir / "_r.pt")
+
+  @overrides
+  def load(self, dir: Path):
+    ...
+  
+  def get_train_acc(self):
+    ensemble_acc = np.array([0 for _ in range(self.de)])
+    max_len = self.capacity if self.buffer_full else self.buffer_index
+    total_batch_index = np.random.permutation(max_len)
+    batch_size = 256
+    num_epochs = int(np.ceil(max_len/batch_size))
+    
+    total = 0
+    for epoch in range(num_epochs):
+      last_index = (epoch+1)*batch_size
+      if (epoch+1)*batch_size > max_len:
+        last_index = max_len
+          
+      sa_t_1 = self.buffer_seg1[epoch*batch_size:last_index]
+      sa_t_2 = self.buffer_seg2[epoch*batch_size:last_index]
+      labels = self.buffer_label[epoch*batch_size:last_index]
+      labels = torch.from_numpy(labels.flatten()).long().to(device)
+      total += labels.size(0)
+      for member in range(self.de):
+        # get logits
+        r_hat1 = self._r[member](thu.torch(sa_t_1))
+        r_hat2 = self._r[member](thu.torch(sa_t_2))
+        r_hat1 = r_hat1.sum(axis=1)
+        r_hat2 = r_hat2.sum(axis=1)
+        r_hat = torch.cat([r_hat1, r_hat2], axis=-1)                
+        _, predicted = torch.max(r_hat.data, 1)
+        correct = (predicted == labels).sum().item()
+        ensemble_acc[member] += correct
+            
+    ensemble_acc = ensemble_acc / total
+    return np.mean(ensemble_acc)
+
+  def _episodes(self):
+    return np.array(
+      list(self._buffer.get_episodes()), dtype=object)
 
   def query(self, mode, **kwargs):
 
     fn = getattr(self, f"_query_{mode}")
-    first, second = fn(self._budget, **kwargs)
+    return fn(self._effective_budget, **kwargs)
 
-    if len(first) != len(second):
-      raise AssertionError(f"{len(first)} != {len(second)}")
-    if len(first) != self._budget:
-      raise AssertionError(f"{len(first)} != {self._budget}")
-    for segment in first:
-      if len(segment) != self._segment_length:
-        raise AssertionError(
-          f"{len(segment)} != {self._segment_length}")
-    for segment in second:
-      if len(segment) != self._segment_length:
-        raise AssertionError(
-          f"{len(segment)} != {self._segment_length}")
+  def _random_pairs(self, episodes, n, segment_length):
 
+    first = self._segment(episodes, size=segment_length)
+    second = self._segment(episodes, size=segment_length)
+    return self._sample(first, n), self._sample(second, n)
+
+  def _query_uniform_aligned(self, 
+                             n,
+                             *,
+                             cluster,
+                             cluster_discard_outlier=True):
+
+    episodes = self._episodes()
+
+    goals = []
+    for episode in episodes:
+      y = np.unique(episode.observation["desired_goal"], axis=0)
+      assert len(y) == 1
+      goals.append(y[0])
+    goals = np.array(goals)
+
+    cluster = cluster.fit(goals)
+
+    from rldev.utils.structure import chunk
+
+    _sa_t_1, _sa_t_2, _r_t_1, _r_t_2 = [], [], [], []
+    labels = set(cluster.labels_)
+    if cluster_discard_outlier:
+      print("discard")
+      labels.discard(-1)
+    print(labels)
+    for x in chunk(range(n), len(labels)):
+      g = labels.pop()
+
+      mask = cluster.labels_ == g
+      sa_t_1, sa_t_2, r_t_1, r_t_2 = self._compat(*self._random_pairs(episodes[mask], len(x), self.size_segment))
+      print(n, len(sa_t_1))
+      _sa_t_1.append(sa_t_1)
+      _sa_t_2.append(sa_t_2)
+      _r_t_1.append(r_t_1)
+      _r_t_2.append(r_t_2)
+    
+    sa_t_1 = np.concatenate(_sa_t_1, axis=0)
+    sa_t_2 = np.concatenate(_sa_t_2, axis=0)
+    r_t_1 = np.concatenate(_r_t_1, axis=0)
+    r_t_2 = np.concatenate(_r_t_2, axis=0)
+
+    # get labels
     sa_t_1, sa_t_2, r_t_1, r_t_2, labels = self.get_label(
-        first, second)
+        sa_t_1, sa_t_2, r_t_1, r_t_2)
     
     if len(labels) > 0:
       self.put_queries(sa_t_1, sa_t_2, labels)
@@ -297,111 +375,102 @@ class RewardModel(Node):
   def _query_uniform(self, n):
 
     episodes = self._episodes()
-    first, second = self._random_pairs(episodes, n)
-    return self._segment(first), self._segment(second)
 
+    sa_t_1, sa_t_2, r_t_1, r_t_2 = self._compat(*self._random_pairs(episodes, n, self.size_segment))
+
+    # get labels
+    sa_t_1, sa_t_2, r_t_1, r_t_2, labels = self.get_label(
+        sa_t_1, sa_t_2, r_t_1, r_t_2)
+    
+    if len(labels) > 0:
+      self.put_queries(sa_t_1, sa_t_2, labels)
+    
+    return len(labels)
+
+  def _sample(self, episodes, n):
+    u"""Sample `n` samples randomly from `episodes`."""
+    return episodes[
+      np.random.choice(len(episodes), size=n, replace=True)]
+  
   def _query_entropy(self, n, *, scale):
 
     episodes = self._episodes()
-    first, second = self._random_pairs(episodes, n * scale)
-    first, second = self._segment(first), self._segment(second)
+    first = self._segment(episodes, size=self.size_segment)
+    second = self._segment(episodes, size=self.size_segment)
 
-    entropy = self.entropy(first, second)
-    index = (-entropy).argsort()[:self._budget]
-    return first[index], second[index]
-  
-  def _query_disagree(self, n, *, scale):
+    first, second = self._sample(first, n * scale), self._sample(second, n * scale)
 
-    episodes = self._episodes()
-    first, second = self._random_pairs(episodes, n * scale)
-    first, second = self._segment(first), self._segment(second)
+    sa_t_1, sa_t_2, r_t_1, r_t_2 = self._compat(first, second)
 
-    disagree = self.disagree(first, second)
-    index = (-disagree).argsort()[:self._budget]
-    return first[index], second[index]
-  
-  def _query_uniform_aligned(self, 
-                             n, 
-                             *, 
-                             cluster, 
-                             cluster_discard_outlier=True):
-
-    episodes = self._episodes()
-    first, second = self._every_aligned_pairs(
-      episodes, cluster, cluster_discard_outlier)
-    first, second = self._segment(first), self._segment(second)
-    if len(first) != len(second):
-      raise AssertionError(f"{len(first)} != {len(second)}")
-
-    index = np.random.choice(len(first), size=n, replace=True)
-    return first[index], second[index]
+    entropy, _ = self.get_entropy(sa_t_1, sa_t_2)
+    
+    top_k_index = (-entropy).argsort()[:self._effective_budget]
+    r_t_1, sa_t_1 = r_t_1[top_k_index], sa_t_1[top_k_index]
+    r_t_2, sa_t_2 = r_t_2[top_k_index], sa_t_2[top_k_index]
+    
+    # get labels
+    sa_t_1, sa_t_2, r_t_1, r_t_2, labels = self.get_label(    
+        sa_t_1, sa_t_2, r_t_1, r_t_2)
+    
+    if len(labels) > 0:
+      self.put_queries(sa_t_1, sa_t_2, labels)
+    
+    return len(labels)
 
   def _query_entropy_aligned(self, 
-                             n, 
-                             *, 
-                             cluster, 
+                             n,
+                             *,
+                             cluster,
                              cluster_discard_outlier=True):
 
     episodes = self._episodes()
     first, second = self._every_aligned_pairs(
-      episodes, cluster, cluster_discard_outlier)
-    first, second = self._segment(first), self._segment(second)
+      episodes, self.size_segment, cluster, cluster_discard_outlier)
     
-    entropy = self.entropy(first, second)
-    index = (-entropy).argsort()[:n]
-    return first[index], second[index]
-  
-  u"""Aux functions."""
+    sa_t_1, sa_t_2, r_t_1, r_t_2 = self._compat(first, second)
 
-  def _episodes(self):
-    return np.array(
-      list(self._buffer.get_episodes()), dtype=object)
+    entropy, _ = self.get_entropy(sa_t_1, sa_t_2)
+    
+    top_k_index = (-entropy).argsort()[:self._effective_budget]
+    r_t_1, sa_t_1 = r_t_1[top_k_index], sa_t_1[top_k_index]
+    r_t_2, sa_t_2 = r_t_2[top_k_index], sa_t_2[top_k_index]
+    
+    # get labels
+    sa_t_1, sa_t_2, r_t_1, r_t_2, labels = self.get_label(    
+        sa_t_1, sa_t_2, r_t_1, r_t_2)
+    
+    if len(labels) > 0:
+      self.put_queries(sa_t_1, sa_t_2, labels)
+    
+    return len(labels)
 
-  def _segment(self, episodes, size=None):
-    u"""Segment each trajectory in `episodes`."""
-
-    size = size or self._segment_length
-    def get(episode):
-      steps = (np.arange(0, size) + 
-               np.random.randint(
-                 0, self._max_episode_steps - size + 1))
-      return episode.get(steps)
-    return np.array([get(episode) 
-                     for episode in episodes], dtype=object)
-  
-  def _every_pairs(self, episodes):
-    u"""Find every pairs of trajectories."""
-    pairs = np.array([[first, second]
-      for first, second in combinations(episodes, 2)], dtype=object)
-    return pairs[..., 0], pairs[..., 1]
-  
-  def _every_aligned_pairs(self, 
-                           episodes,
-                           cluster,
-                           cluster_discard_outlier):
-    u"""Find every pairs of trajectories with matching 
-    desired goals."""
-
-    labels, clusters = self._compute_clusters(episodes, cluster)
-    if cluster_discard_outlier:
-      clusters = [
-        cluster for label, cluster in zip(labels, clusters) 
-          if label != -1]
-
-    pairs = np.array([[*self._every_pairs(episodes)] 
-                      for episodes in clusters], dtype=object)
-    return (np.concatenate(pairs[:, 0], axis=0),
-            np.concatenate(pairs[:, 1], axis=0))
-
-  def _random_pairs(self, episodes, n):
-    u"""Sample `n` pairs randomly from `episodes`."""
-    def index():
-      return np.random.choice(len(episodes), size=n, replace=True)
-    return (episodes[index()], episodes[index()])
-
-  def _compute_clusters(self, episodes, cluster):
+  def _compute_clusters(self, 
+                        episodes, 
+                        cluster,
+                        cluster_discard_outlier):
     u"""Cluster `episodes` based on their desired goals."""
 
+    targets = []
+    for episode in episodes:
+      y = np.unique(episode.observation["desired_goal"], axis=0)
+      assert len(y) == 1
+      targets.append(y[0])
+    targets = np.array(targets)
+
+    cluster = cluster.fit(targets)
+
+    labels_ = set(cluster.labels_)
+    
+    labels = []
+    cluters = []
+    for g in labels_:
+      if cluster_discard_outlier and g == -1:
+        continue
+      mask = cluster.labels_ == g
+      labels.append(g)
+      cluters.append(episodes[mask])
+
+    return labels, cluters
     targets = []
     for episode in episodes:
       target, = np.unique(
@@ -421,207 +490,55 @@ class RewardModel(Node):
     return (unique.tolist(),
             np.split(episodes[index], sections))
 
-  @overrides
-  def save(self, dir: Path):
-    dir.mkdir(parents=True, exist_ok=True)
-    
-    th.save(self._r_optimizer, dir / "_r_optimizer.pt")
-    th.save(self._r, dir / "_r.pt")
+  def _every_pairs(self, episodes):
+    u"""Find every pairs of trajectories."""
+    pairs = np.array([[first, second]
+      for first, second in combinations(episodes, 2)], dtype=object)
+    return pairs[..., 0], pairs[..., 1]
 
-    def save_nosync(file, obj):
-      with open(dir / f"{file}.npy.nosync", "wb") as fout:
-        np.save(fout, obj)
-    
-    save_nosync("_segments_first", self.buffer_seg1)
-    save_nosync("_segments_second", self.buffer_seg2)
-    save_nosync("_segments_label", self.buffer_label)
+  def _every_aligned_pairs(self,
+                           episodes,
+                           length,
+                           cluster,
+                           cluster_discard_outlier):
+    u"""Find every pairs of trajectories with matching 
+    desired goals."""
 
-    with open(dir / "_segments_cursor.pkl", "wb") as fout:
-      pickle.dump(self.buffer_index, fout)
-    with open(dir / "_segments_full.pkl", "wb") as fout:
-      pickle.dump(self.buffer_full, fout)
+    labels, clusters = self._compute_clusters(episodes, cluster, cluster_discard_outlier)
+    pairs = []
+    for label, cluster in zip(labels, clusters):
+      pairs.append([*self._every_pairs(self._segment(cluster, length))])
+    pairs = np.array(pairs, dtype=object)
 
-  @overrides
-  def load(self, dir: Path):
-    ...
-  
-  def get_train_acc(self):
-    ensemble_acc = np.array([0 for _ in range(self.de)])
-    max_len = self.capacity if self.buffer_full else self.buffer_index
-    batch_size = 256
-    num_epochs = int(np.ceil(max_len/batch_size))
-    
-    total = 0
-    for epoch in range(num_epochs):
-      last_index = (epoch+1)*batch_size
-      if (epoch+1)*batch_size > max_len:
-        last_index = max_len
-          
-      sa_t_1 = self.buffer_seg1[epoch*batch_size:last_index]
-      sa_t_2 = self.buffer_seg2[epoch*batch_size:last_index]
-      labels = self.buffer_label[epoch*batch_size:last_index]
-      labels = torch.from_numpy(labels.flatten()).long().to(thu.device())
-      total += labels.size(0)
-      for member in range(self.de):
-        # get logits
-        r_hat1 = self._r[member](thu.torch(sa_t_1))
-        r_hat2 = self._r[member](thu.torch(sa_t_2))
-        r_hat1 = r_hat1.sum(axis=1)
-        r_hat2 = r_hat2.sum(axis=1)
-        r_hat = torch.cat([r_hat1, r_hat2], axis=-1)                
-        _, predicted = torch.max(r_hat.data, 1)
-        correct = (predicted == labels).sum().item()
-        ensemble_acc[member] += correct
-            
-    ensemble_acc = ensemble_acc / total
-    return np.mean(ensemble_acc)
-  
-  def get_every_aligned_queries(self):
+    return (np.concatenate(pairs[:, 0], axis=0),
+            np.concatenate(pairs[:, 1], axis=0))
 
-    _episodes = np.array(
-      list(self._buffer.get_episodes()), dtype=object)
-    print("every episodes", _episodes.shape)
+  def _segment(self, episodes, size):
+    def get(episode):
+      steps = (np.arange(0, size) + 
+               np.random.randint(
+                 0, self._max_episode_steps - size + 1))
+      return episode.get(steps)
+    return np.array([get(episode) 
+                     for episode in episodes], dtype=object)
 
-    def queries(episodes, segment_size):
-      print("episodes with an algined goal", episodes.shape)
-      segments = self._segment(episodes, segment_size)
-      segments_1, segments_2 = [], []
-      c = list(combinations(segments, 2))
-      print("combinations", len(c))
-      for s1, s2 in c:
-        segments_1.append(s1)
-        segments_2.append(s2)
+  def _compat(self, first, second):
 
-      return (np.array(segments_1, dtype=object), 
-              np.array(segments_2, dtype=object))
+    def fn(observation):
+      env = self.agent._env
+      return flatten_observation(env.envs[0].observation_space,
+                                 observation)
 
-    def compat(segments_1, segments_2):
-      print(segments_1.shape, segments_2.shape)
+    def _compat(segments):
+      sa_t, r_t = [], []
+      for seg in segments:
+        sa_t.append(np.concatenate([fn(seg.observation), seg.action], axis=-1))
+        r_t.append(seg.reward)
+      return np.stack(sa_t, axis=0), np.stack(r_t, axis=0)[..., np.newaxis]
 
-      def fn(observation):
-        env = self.agent._env
-        return flatten_observation(env.envs[0].observation_space,
-                                   observation)
+    sa_t_1, r_t_1 = _compat(first)
+    sa_t_2, r_t_2 = _compat(second)
 
-      def _compat(segments):
-        sa_t, r_t = [], []
-        for seg in segments:
-          sa_t.append(np.concatenate([fn(seg.observation), seg.action], axis=-1))
-          r_t.append(seg.reward)
-        return np.stack(sa_t, axis=0), np.stack(r_t, axis=0)[..., np.newaxis]
-
-      sa_t_1, r_t_1 = _compat(segments_1)
-      sa_t_2, r_t_2 = _compat(segments_2)
-
-      return sa_t_1, sa_t_2, r_t_1, r_t_2
-
-    goals = []
-    for episode in _episodes:
-      y = np.unique(episode.observation["desired_goal"], axis=0)
-      assert len(y) == 1
-      goals.append(y[0])
-    goals = np.array(goals)
-
-    cluster = self._cluster(**self._cluster_kwargs).fit(goals)
-
-    _sa_t_1, _sa_t_2, _r_t_1, _r_t_2 = [], [], [], []
-    labels = set(cluster.labels_)
-    if self.discard_outlier_goals:
-      print("discard")
-      labels.discard(-1)
-    print(labels)
-    for g in labels:
-      mask = cluster.labels_ == g
-      sa_t_1, sa_t_2, r_t_1, r_t_2 = compat(*queries(_episodes[mask], self._segment_length))
-      _sa_t_1.append(sa_t_1)
-      _sa_t_2.append(sa_t_2)
-      _r_t_1.append(r_t_1)
-      _r_t_2.append(r_t_2)
-    
-    sa_t_1 = np.concatenate(_sa_t_1, axis=0)
-    sa_t_2 = np.concatenate(_sa_t_2, axis=0)
-    r_t_1 = np.concatenate(_r_t_1, axis=0)
-    r_t_2 = np.concatenate(_r_t_2, axis=0)
-
-    print(sa_t_1.shape)
-    return sa_t_1, sa_t_2, r_t_1, r_t_2
-
-  def get_queries(self, mb_size=20):
-
-    _episodes = np.array(
-      list(self._buffer.get_episodes()), dtype=object)
-    print(_episodes.shape)
-
-    def queries(episodes, batch_size, segment_size):
-
-      segments_1 = self._segment(episodes, size=segment_size)
-      segments_2 = self._segment(episodes, size=segment_size)
-
-      assert len(segments_1) == len(segments_2)
-      def batch_index():
-        return np.random.choice(
-          len(segments_1), size=batch_size, replace=True)
-
-      return (segments_1[batch_index()], 
-              segments_2[batch_index()])
-
-    def compat(segments_1, segments_2):
-
-      def fn(observation):
-        env = self.agent._env
-        return flatten_observation(env.envs[0].observation_space,
-                                   observation)
-
-      def _compat(segments):
-        sa_t, r_t = [], []
-        for seg in segments:
-          sa_t.append(np.concatenate([fn(seg.observation), seg.action], axis=-1))
-          r_t.append(seg.reward)
-        return np.stack(sa_t, axis=0), np.stack(r_t, axis=0)[..., np.newaxis]
-
-      sa_t_1, r_t_1 = _compat(segments_1)
-      sa_t_2, r_t_2 = _compat(segments_2)
-
-      return sa_t_1, sa_t_2, r_t_1, r_t_2
-
-    if not self.aligned_goals:
-      return compat(*queries(_episodes, mb_size, self._segment_length))
-
-    goals = []
-    for episode in _episodes:
-      y = np.unique(episode.observation["desired_goal"], axis=0)
-      assert len(y) == 1
-      goals.append(y[0])
-    goals = np.array(goals)
-
-    cluster = self._cluster(**self._cluster_kwargs).fit(goals)
-
-    from rldev.utils.structure import chunk
-
-    _sa_t_1, _sa_t_2, _r_t_1, _r_t_2 = [], [], [], []
-    labels = set(cluster.labels_)
-    if self.discard_outlier_goals:
-      print("discard")
-      labels.discard(-1)
-    print(labels)
-    for x in chunk(range(mb_size), len(labels)):
-      n = len(x)
-      g = labels.pop()
-
-      mask = cluster.labels_ == g
-      sa_t_1, sa_t_2, r_t_1, r_t_2 = compat(*queries(_episodes[mask], n, self._segment_length))
-      print(n, len(sa_t_1))
-      _sa_t_1.append(sa_t_1)
-      _sa_t_2.append(sa_t_2)
-      _r_t_1.append(r_t_1)
-      _r_t_2.append(r_t_2)
-    
-    sa_t_1 = np.concatenate(_sa_t_1, axis=0)
-    sa_t_2 = np.concatenate(_sa_t_2, axis=0)
-    r_t_1 = np.concatenate(_r_t_1, axis=0)
-    r_t_2 = np.concatenate(_r_t_2, axis=0)
-
-    print(sa_t_1.shape)
     return sa_t_1, sa_t_2, r_t_1, r_t_2
 
   def put_queries(self, sa_t_1, sa_t_2, labels):
@@ -647,15 +564,8 @@ class RewardModel(Node):
       np.copyto(self.buffer_label[self.buffer_index:next_index], labels)
       self.buffer_index = next_index
           
-  # def get_label(self, sa_t_1, sa_t_2, r_t_1, r_t_2):
-  def get_label(self, first, second):
-    
-    sa_t_1 = self._batch_input(first)
-    sa_t_2 = self._batch_input(second)
-    r_t_1  = self._batch_reward(first)
-    r_t_2  = self._batch_reward(second)
-    
-    assert len(sa_t_1) == self._budget
+  def get_label(self, sa_t_1, sa_t_2, r_t_1, r_t_2):
+    assert len(sa_t_1) == self._effective_budget
     sum_r_t_1 = np.sum(r_t_1, axis=1)
     sum_r_t_2 = np.sum(r_t_2, axis=1)
     
@@ -706,205 +616,6 @@ class RewardModel(Node):
     labels[margin_index] = -1 
     
     return sa_t_1, sa_t_2, r_t_1, r_t_2, labels
-  
-  def kcenter_sampling(self):
-    raise
-      
-    # get queries
-    num_init = self._budget*self.large_batch
-    sa_t_1, sa_t_2, r_t_1, r_t_2 =  self.get_queries(
-        mb_size=num_init)
-    
-    # get final queries based on kmeans clustering
-    temp_sa_t_1 = sa_t_1[:,:,:self.ds]
-    temp_sa_t_2 = sa_t_2[:,:,:self.ds]
-    temp_sa = np.concatenate([temp_sa_t_1.reshape(num_init, -1),  
-                              temp_sa_t_2.reshape(num_init, -1)], axis=1)
-    
-    max_len = self.capacity if self.buffer_full else self.buffer_index
-    
-    tot_sa_1 = self.buffer_seg1[:max_len, :, :self.ds]
-    tot_sa_2 = self.buffer_seg2[:max_len, :, :self.ds]
-    tot_sa = np.concatenate([tot_sa_1.reshape(max_len, -1),  
-                              tot_sa_2.reshape(max_len, -1)], axis=1)
-    
-    selected_index = KCenterGreedy(temp_sa, tot_sa, self._budget)
-
-    r_t_1, sa_t_1 = r_t_1[selected_index], sa_t_1[selected_index]
-    r_t_2, sa_t_2 = r_t_2[selected_index], sa_t_2[selected_index]
-    
-    # get labels
-    sa_t_1, sa_t_2, r_t_1, r_t_2, labels = self.get_label(
-        sa_t_1, sa_t_2, r_t_1, r_t_2)
-    
-    if len(labels) > 0:
-      self.put_queries(sa_t_1, sa_t_2, labels)
-    
-    return len(labels)
-  
-  def kcenter_disagree_sampling(self):
-    raise
-      
-    num_init = self._budget*self.large_batch
-    num_init_half = int(num_init*0.5)
-    
-    # get queries
-    sa_t_1, sa_t_2, r_t_1, r_t_2 =  self.get_queries(
-        mb_size=num_init)
-    
-    # get final queries based on uncertainty
-    disagree = self.disagree(sa_t_1, sa_t_2)
-    top_k_index = (-disagree).argsort()[:num_init_half]
-    r_t_1, sa_t_1 = r_t_1[top_k_index], sa_t_1[top_k_index]
-    r_t_2, sa_t_2 = r_t_2[top_k_index], sa_t_2[top_k_index]
-    
-    # get final queries based on kmeans clustering
-    temp_sa_t_1 = sa_t_1[:,:,:self.ds]
-    temp_sa_t_2 = sa_t_2[:,:,:self.ds]
-    
-    temp_sa = np.concatenate([temp_sa_t_1.reshape(num_init_half, -1),  
-                              temp_sa_t_2.reshape(num_init_half, -1)], axis=1)
-    
-    max_len = self.capacity if self.buffer_full else self.buffer_index
-    
-    tot_sa_1 = self.buffer_seg1[:max_len, :, :self.ds]
-    tot_sa_2 = self.buffer_seg2[:max_len, :, :self.ds]
-    tot_sa = np.concatenate([tot_sa_1.reshape(max_len, -1),  
-                              tot_sa_2.reshape(max_len, -1)], axis=1)
-    
-    selected_index = KCenterGreedy(temp_sa, tot_sa, self._budget)
-    
-    r_t_1, sa_t_1 = r_t_1[selected_index], sa_t_1[selected_index]
-    r_t_2, sa_t_2 = r_t_2[selected_index], sa_t_2[selected_index]
-
-    # get labels
-    sa_t_1, sa_t_2, r_t_1, r_t_2, labels = self.get_label(
-        sa_t_1, sa_t_2, r_t_1, r_t_2)
-    
-    if len(labels) > 0:
-      self.put_queries(sa_t_1, sa_t_2, labels)
-    
-    return len(labels)
-  
-  def kcenter_entropy_sampling(self):
-    raise
-      
-    num_init = self._budget*self.large_batch
-    num_init_half = int(num_init*0.5)
-    
-    # get queries
-    sa_t_1, sa_t_2, r_t_1, r_t_2 =  self.get_queries(
-        mb_size=num_init)
-    
-    
-    # get final queries based on uncertainty
-    entropy = self.entropy(sa_t_1, sa_t_2)
-    top_k_index = (-entropy).argsort()[:num_init_half]
-    r_t_1, sa_t_1 = r_t_1[top_k_index], sa_t_1[top_k_index]
-    r_t_2, sa_t_2 = r_t_2[top_k_index], sa_t_2[top_k_index]
-    
-    # get final queries based on kmeans clustering
-    temp_sa_t_1 = sa_t_1[:,:,:self.ds]
-    temp_sa_t_2 = sa_t_2[:,:,:self.ds]
-    
-    temp_sa = np.concatenate([temp_sa_t_1.reshape(num_init_half, -1),  
-                              temp_sa_t_2.reshape(num_init_half, -1)], axis=1)
-    
-    max_len = self.capacity if self.buffer_full else self.buffer_index
-    
-    tot_sa_1 = self.buffer_seg1[:max_len, :, :self.ds]
-    tot_sa_2 = self.buffer_seg2[:max_len, :, :self.ds]
-    tot_sa = np.concatenate([tot_sa_1.reshape(max_len, -1),  
-                              tot_sa_2.reshape(max_len, -1)], axis=1)
-    
-    selected_index = KCenterGreedy(temp_sa, tot_sa, self._budget)
-    
-    r_t_1, sa_t_1 = r_t_1[selected_index], sa_t_1[selected_index]
-    r_t_2, sa_t_2 = r_t_2[selected_index], sa_t_2[selected_index]
-
-    # get labels
-    sa_t_1, sa_t_2, r_t_1, r_t_2, labels = self.get_label(
-        sa_t_1, sa_t_2, r_t_1, r_t_2)
-    
-    if len(labels) > 0:
-      self.put_queries(sa_t_1, sa_t_2, labels)
-    
-    return len(labels)
-  
-  def uniform_sampling(self):
-    # get queries
-    sa_t_1, sa_t_2, r_t_1, r_t_2 =  self.get_queries(
-        mb_size=self._budget)
-        
-    # get labels
-    sa_t_1, sa_t_2, r_t_1, r_t_2, labels = self.get_label(
-        sa_t_1, sa_t_2, r_t_1, r_t_2)
-    
-    if len(labels) > 0:
-      self.put_queries(sa_t_1, sa_t_2, labels)
-    
-    return len(labels)
-  
-  def disagreement_sampling(self):
-    raise
-    # get queries
-    sa_t_1, sa_t_2, r_t_1, r_t_2 =  self.get_queries(
-        mb_size=self._budget*self.large_batch)
-    
-    # get final queries based on uncertainty
-    disagree = self.disagree(sa_t_1, sa_t_2)
-    top_k_index = (-disagree).argsort()[:self._budget]
-    r_t_1, sa_t_1 = r_t_1[top_k_index], sa_t_1[top_k_index]
-    r_t_2, sa_t_2 = r_t_2[top_k_index], sa_t_2[top_k_index]        
-    
-    # get labels
-    sa_t_1, sa_t_2, r_t_1, r_t_2, labels = self.get_label(
-        sa_t_1, sa_t_2, r_t_1, r_t_2)        
-    if len(labels) > 0:
-      self.put_queries(sa_t_1, sa_t_2, labels)
-    
-    return len(labels)
-  
-  def entropy_sampling(self):
-    # get queries
-    sa_t_1, sa_t_2, r_t_1, r_t_2 =  self.get_queries(
-        mb_size=self._budget*self.large_batch)
-    
-    # get final queries based on uncertainty
-    entropy = self.entropy(sa_t_1, sa_t_2)
-    
-    top_k_index = (-entropy).argsort()[:self._budget]
-    r_t_1, sa_t_1 = r_t_1[top_k_index], sa_t_1[top_k_index]
-    r_t_2, sa_t_2 = r_t_2[top_k_index], sa_t_2[top_k_index]
-    
-    # get labels
-    sa_t_1, sa_t_2, r_t_1, r_t_2, labels = self.get_label(    
-        sa_t_1, sa_t_2, r_t_1, r_t_2)
-    
-    if len(labels) > 0:
-      self.put_queries(sa_t_1, sa_t_2, labels)
-    
-    return len(labels)
-  
-  def greedy_aligned_entropy_sampling(self):
-    # get queries
-    sa_t_1, sa_t_2, r_t_1, r_t_2 =  self.get_every_aligned_queries()
-    
-    # get final queries based on uncertainty
-    entropy = self.entropy(sa_t_1, sa_t_2)
-    
-    top_k_index = (-entropy).argsort()[:self._budget]
-    r_t_1, sa_t_1 = r_t_1[top_k_index], sa_t_1[top_k_index]
-    r_t_2, sa_t_2 = r_t_2[top_k_index], sa_t_2[top_k_index]
-    
-    # get labels
-    sa_t_1, sa_t_2, r_t_1, r_t_2, labels = self.get_label(    
-        sa_t_1, sa_t_2, r_t_1, r_t_2)
-    
-    if len(labels) > 0:
-      self.put_queries(sa_t_1, sa_t_2, labels)
-    
-    return len(labels)
 
   def train_reward(self):
     ensemble_losses = [[] for _ in range(self.de)]
@@ -933,7 +644,7 @@ class RewardModel(Node):
         sa_t_1 = self.buffer_seg1[idxs]
         sa_t_2 = self.buffer_seg2[idxs]
         labels = self.buffer_label[idxs]
-        labels = torch.from_numpy(labels.flatten()).long().to(thu.device())
+        labels = torch.from_numpy(labels.flatten()).long().to(device)
         
         if member == 0:
           total += labels.size(0)
@@ -990,7 +701,7 @@ class RewardModel(Node):
         sa_t_1 = self.buffer_seg1[idxs]
         sa_t_2 = self.buffer_seg2[idxs]
         labels = self.buffer_label[idxs]
-        labels = torch.from_numpy(labels.flatten()).long().to(thu.device())
+        labels = torch.from_numpy(labels.flatten()).long().to(device)
         
         if member == 0:
           total += labels.size(0)
@@ -1009,11 +720,7 @@ class RewardModel(Node):
         target_onehot += self.label_margin
         if sum(uniform_index) > 0:
           target_onehot[uniform_index] = 0.5
-        def softxent(input, target):
-          return -(target *
-                   F.log_softmax(input, dim=1)).sum() / len(input)
-        curr_loss = softxent(r_hat, target_onehot)
-
+        curr_loss = self.softXEnt_loss(r_hat, target_onehot)
         loss += curr_loss
         ensemble_losses[member].append(curr_loss.item())
         
