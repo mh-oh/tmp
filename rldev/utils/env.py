@@ -3,7 +3,7 @@ import numpy as np
 
 from collections import OrderedDict
 from copy import deepcopy
-from gym import spaces
+from gymnasium import spaces
 from typing import *
 
 from rldev.utils import gym_types

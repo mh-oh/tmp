@@ -41,3 +41,16 @@ conf.query.mode = "entropy_aligned"
 conf.query.kwargs = dict(cluster=KMeans(n_clusters=3))
 register("entropy-kmeans-3-traj", conf)
 
+conf = get("uniform")
+conf.segment = 10000
+conf.query.starter_mode = "uniform_aligned"
+conf.query.starter_kwargs = dict(cluster=KMeans(n_clusters=2))
+conf.query.mode = "entropy_aligned"
+conf.query.kwargs = dict(cluster=KMeans(n_clusters=2))
+register("entropy-kmeans-2-traj", conf)
+
+conf = get("uniform")
+conf.segment = 10000
+conf.query.mode = "entropy"
+conf.query.kwargs = dict(scale=10)
+register("entropy", conf)

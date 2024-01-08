@@ -12,19 +12,15 @@ $ cd rldev
 $ conda create -n rldev python=3.8
 $ conda activate rldev
 $ pip install torch==1.8.0+cu111 -f https://download.pytorch.org/whl/torch_stable.html
-$ pip install gym==0.17.1
 $ pip install scikit-learn
 $ pip install tensorboard
 $ pip install tabulate
 $ pip install dill
-$ pip install "cython<3"
-$ pip install mujoco_py
 $ pip install numpy==1.23.4
 $ pip install overrides
 $ pip install scikit-image
 $ pip install wandb
 $ pip install munch
-$ pip install gymnasium
 $ pip install gymnasium-robotics
 $ pip install ml_collections
 $ pip install gpustat

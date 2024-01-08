@@ -1,10 +1,11 @@
-from multiprocessing import Process, Pipe
 
 import numpy as np
 
+from multiprocessing import Process, Pipe
+from gymnasium import spaces
+
 from rldev.utils import gym_types
 from rldev.utils.vec_env import VecEnv, CloudpickleWrapper
-from gym import spaces
 
 
 def _worker(remote, parent_remote, env_fn_wrapper):

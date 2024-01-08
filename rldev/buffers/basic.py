@@ -5,7 +5,7 @@ import torch as th
 
 from abc import *
 from collections import OrderedDict
-from gym import spaces
+from gymnasium import spaces
 from overrides import overrides
 from typing import *
 

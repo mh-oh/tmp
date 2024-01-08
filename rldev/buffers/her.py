@@ -1,10 +1,9 @@
 
-import gym
 import numpy as np
 import pickle
 
 from collections import OrderedDict
-from gym import spaces
+from gymnasium import spaces
 from overrides import overrides
 from pathlib import Path
 

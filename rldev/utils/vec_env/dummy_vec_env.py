@@ -1,7 +1,7 @@
 from collections import OrderedDict
 
 import numpy as np
-from gym import spaces
+from gymnasium import spaces
 
 from . import VecEnv
 from rldev.utils import gym_types

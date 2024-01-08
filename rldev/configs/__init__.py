@@ -2,8 +2,6 @@
 from rldev.configs.config import *
 from rldev.configs.continuous_off_policy import *
 
-from munch import AutoMunch as Conf
-
 """
 from munch import AutoMunch, Munch, munchify
 from collections.abc import *

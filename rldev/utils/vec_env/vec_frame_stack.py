@@ -1,6 +1,7 @@
-import numpy as np
-from gym import spaces
 
+import numpy as np
+
+from gymnasium import spaces
 from rldev.utils.vec_env import VecEnvWrapper
 
 

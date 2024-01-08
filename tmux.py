@@ -150,7 +150,7 @@ def run(commands, choices):
     print(f"  - gpu={gpui}, tmux-session='{sess}'")
     print(f"  - {tmux_command}")
 
-    header = "source launcher_header.sh"
+    header = "source tmux_header.sh"
     with open(tmp.name, "w") as fout:
       fout.write(CONTENTS.format(
         header=header, gpu=gpui, command=cmd, this=tmp.name))

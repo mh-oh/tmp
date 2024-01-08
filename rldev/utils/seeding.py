@@ -1,5 +1,4 @@
 
-import gym
 import numpy as np
 import random
 
@@ -25,5 +24,5 @@ def set_global_seeds(seed):
   np.random.seed(seed)
   random.seed(seed)
   # prng was removed in latest gym version
-  if hasattr(gym.spaces, 'prng'):
-    gym.spaces.prng.seed(seed)
+  if hasattr(gymnasium.spaces, 'prng'):
+    gymnasium.spaces.prng.seed(seed)

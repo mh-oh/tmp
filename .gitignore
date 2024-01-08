@@ -8,3 +8,4 @@ wandb
 *.svg
 *.npy
 *.pkl
+*.out

@@ -1,24 +1,19 @@
-from pathlib import Path
-import numpy as np
 
-try:
-  import tensorflow as tf
-  import tensorboard as tb
-  tf.io.gfile = tb.compat.tensorflow_stub.io.gfile
-except:
-  import tensorboard as tb
-
-from torch.utils.tensorboard import SummaryWriter
-from tabulate import tabulate
-from collections import defaultdict
-import json
-import os
-import time
 import csv
-from rldev.agents.core import Node
-import wandb
-from overrides import overrides
+import json
+import numpy as np
+import os
 import sys
+import time
+import wandb
+
+from collections import defaultdict
+from overrides import overrides
+from pathlib import Path
+from tabulate import tabulate
+
+from rldev.agents.core import Node
+
 
 class DummyLogger(Node):
 

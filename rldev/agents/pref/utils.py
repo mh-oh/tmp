@@ -4,11 +4,9 @@ import torch.nn.functional as F
 import os
 import random
 import math
-import dmc2gym
-import metaworld.envs.mujoco.env_dict as _env_dict
 
 from collections import deque
-from gym.wrappers.time_limit import TimeLimit
+from gymnasium.wrappers.time_limit import TimeLimit
 from rldev.agents.pref.rlkit.envs.wrappers import NormalizedBoxEnv
 from collections import deque
 from skimage.util.shape import view_as_windows
@@ -16,6 +14,7 @@ from torch import nn
 from torch import distributions as pyd
     
 def make_env(cfg):
+    import dmc2gym
     """Helper function to create dm_control environment"""
     if cfg.env == 'ball_in_cup_catch':
         domain_name = 'ball_in_cup'
@@ -35,6 +34,7 @@ def make_env(cfg):
     return env
 
 def ppo_make_env(env_id, seed):
+    import dmc2gym
     """Helper function to create dm_control environment"""
     if env_id == 'ball_in_cup_catch':
         domain_name = 'ball_in_cup'
@@ -59,6 +59,7 @@ def tie_weights(src, trg):
     trg.bias = src.bias
     
 def make_metaworld_env(cfg):
+    import metaworld.envs.mujoco.env_dict as _env_dict
     env_name = cfg.env
     if env_name in _env_dict.ALL_V2_ENVIRONMENTS:
         env_cls = _env_dict.ALL_V2_ENVIRONMENTS[env_name]
@@ -74,6 +75,7 @@ def make_metaworld_env(cfg):
     return TimeLimit(NormalizedBoxEnv(env), env.max_path_length)
 
 def ppo_make_metaworld_env(env_id, seed):
+    import metaworld.envs.mujoco.env_dict as _env_dict
     env_name = env_id.replace('metaworld_','')
     if env_name in _env_dict.ALL_V2_ENVIRONMENTS:
         env_cls = _env_dict.ALL_V2_ENVIRONMENTS[env_name]

@@ -1,12 +1,11 @@
 
-import gym
-import gym.spaces as spaces
 import gymnasium
 
+from gymnasium import spaces
 from gymnasium.utils.step_api_compatibility import convert_to_done_step_api
 
 
-class BoxObservation(gym.wrappers.FlattenObservation):
+class BoxObservation(gymnasium.wrappers.FlattenObservation):
 
   def __init__(self, env):
     u""""""
@@ -23,7 +22,7 @@ class BoxObservation(gym.wrappers.FlattenObservation):
       self.dict_observation_space, observation)
 
 
-class SuccessInfo(gym.Wrapper):
+class SuccessInfo(gymnasium.Wrapper):
 
   def __init__(self, env):
     super().__init__(env)

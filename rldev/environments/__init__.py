@@ -13,7 +13,6 @@ def make(name):
   return GymApi(env)
 
 
-import gym
 import gymnasium
 import numpy as np
 import time
@@ -21,7 +20,7 @@ import wandb
 
 from abc import *
 from collections import OrderedDict
-from gym.spaces import Box, Dict
+from gymnasium.spaces import Box, Dict
 from overrides import overrides
 from typing import Union, Callable, Optional
 
@@ -180,9 +179,9 @@ def make_env_by_id(env_id, seed, rank, episode_life=True):
   return _init
 
 
-class ReturnAndObsWrapper(gym.Wrapper):
+class ReturnAndObsWrapper(gymnasium.Wrapper):
   def __init__(self, env):
-    gym.Wrapper.__init__(self, env)
+    super().__init__(env)
     self.total_rewards = 0
 
   def step(self, action):
@@ -211,7 +210,7 @@ class ReturnAndObsWrapper(gym.Wrapper):
     return getattr(self.env, attr)
 
 
-class FirstVisitDoneWrapper(gym.Wrapper):
+class FirstVisitDoneWrapper(gymnasium.Wrapper):
   """A wrapper for sparse reward goal envs that makes them terminate
   upon achievement"""
   def step(self, action):
@@ -230,11 +229,11 @@ class FirstVisitDoneWrapper(gym.Wrapper):
     return getattr(self.env, attr)
 
 
-class TransposeImage(gym.ObservationWrapper):
+class TransposeImage(gymnasium.ObservationWrapper):
   def __init__(self, env=None):
     super(TransposeImage, self).__init__(env)
     obs_shape = self.observation_space.shape
-    self.observation_space = gym.spaces.Box(self.observation_space.low[0, 0, 0],
+    self.observation_space = spaces.Box(self.observation_space.low[0, 0, 0],
                                             self.observation_space.high[0, 0, 0],
                                             [obs_shape[2], obs_shape[1], obs_shape[0]],
                                             dtype=self.observation_space.dtype)
@@ -266,7 +265,7 @@ class LazyFrames(object):
     return self.__array__()[i]
 
 
-class FrameStack(gym.Wrapper):
+class FrameStack(gymnasium.Wrapper):
   def __init__(self, env, k):
     """Stack k last frames.
 
@@ -276,7 +275,7 @@ class FrameStack(gym.Wrapper):
     --------
     baselines.common.atari_wrappers.LazyFrames
     """
-    gym.Wrapper.__init__(self, env)
+    super().__init__(env)
     self.k = k
     self.frames = deque([], maxlen=k)
     shp = env.observation_space.shape
@@ -298,7 +297,7 @@ class FrameStack(gym.Wrapper):
     return LazyFrames(list(self.frames))
 
 
-from gym import spaces
+from gymnasium import spaces
 from rldev.utils.env import observation_spec, flatten_space, flatten_observation
 
 
@@ -336,27 +335,21 @@ class DictGoalEnv:
 
 def create_env(name, seed, *args, **kwargs):
 
-  from gym.envs import registry
-  spec = registry.env_specs.get(name)
+  from gymnasium.envs import registry
+  from gymnasium.wrappers.record_video import RecordVideo
+  from rldev.environments.wrappers import GymApi
+  spec = registry.get(name)
   if spec is not None:
+    if "render_mode" not in kwargs:
+      kwargs["render_mode"] = "rgb_array"
     def make(name):
-      return gym.make(name, *args, **kwargs)
+      env = gymnasium.make(name, *args, **kwargs)
+      # env = RecordVideo(env, video_folder=f"{wandb.run.dir}/videos")
+      env = GymApi(env)
+      env.seed(seed)
+      return env
   else:
-    from gymnasium.envs import registry
-    from gymnasium.wrappers.record_video import RecordVideo
-    from rldev.environments.wrappers import GymApi
-    spec = registry.get(name)
-    if spec is not None:
-      if "render_mode" not in kwargs:
-        kwargs["render_mode"] = "rgb_array"
-      def make(name):
-        env = gymnasium.make(name, *args, **kwargs)
-        # env = RecordVideo(env, video_folder=f"{wandb.run.dir}/videos")
-        env = GymApi(env)
-        env.seed(seed)
-        return env
-    else:
-      raise NotImplementedError()
+    raise NotImplementedError()
 
   return DictGoalEnv(make(name))
 
@@ -583,14 +576,13 @@ class PushV2(BoxGoalEnv):
         np.arange(dim).reshape(shape), self.index("desired_goal"))
 
 
-from metaworld.envs.mujoco.env_dict import ALL_V2_ENVIRONMENTS as env_dict
-metaworld_envs = {"button-press": (env_dict["button-press-v2"], ButtonPressV2),
-                  "push": (env_dict["push-v2"], PushV2),
-                  "pick-place": (env_dict["pick-place-v2"], None),
-                  "reach": (env_dict["reach-v2"], ReachV2)}
-
-
 def create_metaworld_env(name, seed):
+
+  from metaworld.envs.mujoco.env_dict import ALL_V2_ENVIRONMENTS as env_dict
+  metaworld_envs = {"button-press": (env_dict["button-press-v2"], ButtonPressV2),
+                    "push": (env_dict["push-v2"], PushV2),
+                    "pick-place": (env_dict["pick-place-v2"], None),
+                    "reach": (env_dict["reach-v2"], ReachV2)}
 
   if name not in metaworld_envs:
     raise ValueError()
@@ -601,6 +593,6 @@ def create_metaworld_env(name, seed):
   env._set_task_called = True
   env.seed(seed)
 
-  from gym.wrappers.time_limit import TimeLimit
+  from gymnasium.wrappers.time_limit import TimeLimit
   from rldev.agents.pref.rlkit.envs.wrappers import NormalizedBoxEnv  
   return wrap(TimeLimit(NormalizedBoxEnv(env), env.max_path_length))
