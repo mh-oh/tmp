@@ -1,11 +1,17 @@
 
 import argparse
+import datetime
 import os
 import yaml
 
 from collections import defaultdict
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+
+
+def timestamp():
+  now = datetime.datetime.now()
+  return now.strftime('%y%m%d:%H%M%S')
 
 
 u"""Commands."""
@@ -30,7 +36,7 @@ u"""Launch the commands with slurm."""
 CONTENTS = r"""#!/bin/bash
 
 #SBATCH -J {job}
-#SBATCH -o slurm.{job}.out
+#SBATCH -o slurm.{job}.{time}.out
 #SBATCH -t 03:00:00
 
 #SBATCH -p {partition}
@@ -58,6 +64,7 @@ def run(cmds):
       tmp = NamedTemporaryFile(delete=False)
       slurm_command = f"sbatch {tmp.name}"
       kwargs = dict(job=Path(tmp.name).stem,
+                    time=timestamp(),
                     partition=partition,
                     nodelist=nodelist,
                     header="source slurm_header.sh",
