@@ -8,6 +8,8 @@ from rldev.configs.registry.registry import get, register
 
 conf = get("sac")
 
+conf.topK = 5
+
 conf.fusion = 3
 conf.activation = 'tanh'
 conf.reward_lr = 0.0003
@@ -55,4 +57,9 @@ conf = get("uniform-traj")
 conf.query.mode = "entropy_aligned"
 conf.query.kwargs = dict(cluster=KMeans(n_clusters=3))
 register("entropy-kmeans-3-traj", conf)
+
+conf = get("uniform-traj")
+conf.query.mode = "entropy_aligned"
+conf.query.kwargs = dict(cluster=KMeans(n_clusters=2))
+register("entropy-kmeans-2-traj", conf)
 

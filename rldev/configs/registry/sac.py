@@ -8,7 +8,6 @@ conf = Conf()
 
 conf.num_seed_steps = 1000
 conf.reset_update = 100
-conf.topK = 5
 
 conf.steps = 1000000
 conf.replay_buffer_capacity = conf.ref("steps")
