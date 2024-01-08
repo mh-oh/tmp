@@ -45,14 +45,6 @@ class Env(gymnasium.Env, metaclass=ABCMeta):
     ...
   
   @abstractmethod
-  def compute_teacher_reward(self,
-                             observation,
-                             action,
-                             next_observation,
-                             info):
-    ...
-  
-  @abstractmethod
   def compute_progress(self, observation):
     ...
   

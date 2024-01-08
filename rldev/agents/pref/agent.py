@@ -46,12 +46,14 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
                         "train/episode_steps",
                         "train/success_rate",
                         "train/return",
+                        "train/sparse_return",
                         "train/progress",
                         "train/pseudo_return",
                         "train/feedbacks",
                         "train/labeled_feedbacks",
                         "test/success_rate",
                         "test/return",
+                        "test/sparse_return",
                         "test/progress")
 
     u"""Training records."""
@@ -64,6 +66,7 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
     self._episode_success = np.zeros((n_envs,))
     self._episode_progress = np.full((n_envs,), np.inf)
     self._episode_return = np.zeros((n_envs,))
+    self._episode_sparse_return = np.zeros((n_envs,))
     self._episode_pseudo_return = np.zeros((n_envs,))
 
     # We keep track of recent `window` episodes for aggregation.
@@ -71,6 +74,7 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
     self._episode_successes = deque([], maxlen=window)
     self._episode_progresses = deque([], maxlen=window)
     self._episode_returns = deque([], maxlen=window)
+    self._episode_sparse_returns = deque([], maxlen=window)
     self._episode_pseudo_returns = deque([], maxlen=window)
 
     # Number of human feedbacks until current step.
@@ -144,7 +148,8 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
           self._episode_success[i] = max(self._episode_success[i], success)
         self._episode_progress[i] = progress(recursive_get(i, self.obs))
         self._episode_pseudo_return[i] += pseudo_reward ################################
-        self._episode_return[i] += reward ###########################
+        self._episode_return[i] += reward[i] ###########################
+        self._episode_sparse_return[i] += info[i]["sparse_reward"]
         self._episode_step[i] += 1
           
       # adding data to the reward training data
@@ -170,9 +175,11 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
       self._episode_successes.extend(self._episode_success[done])
       self._episode_progresses.extend(self._episode_progress[done])
       self._episode_returns.extend(self._episode_return[done])
+      self._episode_sparse_returns.extend(self._episode_sparse_return[done])
       self._episode_pseudo_returns.extend(self._episode_pseudo_return[done])
       self._episode_success[done] = 0
       self._episode_return[done] = 0
+      self._episode_sparse_return[done] = 0
       self._episode_pseudo_return[done] = 0
       self._episode_step[done] = 0
 
@@ -182,6 +189,7 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
       self.logger.log("train/success_rate", np.mean(self._episode_successes), self._step)
       self.logger.log("train/progress", np.mean(self._episode_progresses), self._step)
       self.logger.log("train/return", np.mean(self._episode_returns), self._step)
+      self.logger.log("train/sparse_return", np.mean(self._episode_sparse_returns), self._step)
       self.logger.log("train/pseudo_return", np.mean(self._episode_pseudo_returns), self._step)
       self.logger.log("train/feedbacks", self._feedbacks, self._step)
       self.logger.log("train/labeled_feedbacks", self._labeled_feedbacks, self._step)
@@ -210,11 +218,9 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
                      next_observation, 
                      done,
                      done_no_max)
-    teacher_reward = np.array(
-      [info[i]["teacher_reward"] for i in range(len(info))])
     self._reward_model.add(observation,
                            action,
-                           teacher_reward,
+                           reward,
                            next_observation,
                            done)
 
@@ -222,6 +228,7 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
            episodes: int):
 
     episode_returns = []
+    episode_sparse_returns = []
     episode_progresses = []
     episode_successes = []
 
@@ -233,6 +240,7 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
       episode_success = np.zeros((self._n_envs,))
       episode_progress = np.full((self._n_envs,), np.inf)
       episode_return = np.zeros((self._n_envs,))
+      episode_sparse_return = np.zeros((self._n_envs,))
 
       while not np.all(done):
         with utils.eval_mode(self._policy):
@@ -247,16 +255,20 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
             episode_progress[i] = progress(recursive_get(i, obs))
           else:
             episode_return[i] += reward[i]
+            episode_sparse_return[i] += info[i]["sparse_reward"]
             success = get_success_info(info[i])
             if success is not None:
               episode_success[i] = max(episode_success[i], success)
       
       episode_returns.extend(episode_return)
+      episode_sparse_returns.extend(episode_sparse_return)
       episode_progresses.extend(episode_progress)
       episode_successes.extend(episode_success)
     
     self.logger.log("test/return", 
                     np.mean(episode_returns), self._step)
+    self.logger.log("test/sparse_return", 
+                    np.mean(episode_sparse_returns), self._step)
     self.logger.log("test/progress",
                     np.mean(episode_progresses), self._step)
     self.logger.log("test/success_rate",
