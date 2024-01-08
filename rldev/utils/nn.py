@@ -53,10 +53,9 @@ class GELU(nn.Module):
 # Basic MLP, for non actor/critic things
 ######################################################################################################
 
-class _MLP(nn.Module):
+class _MLP(nn.Sequential):
 
   def __init__(self, dims, activations):
-    super().__init__()
     
     if not isiterable(dims):
       raise ValueError(f"'dims' should be iterable")
@@ -71,17 +70,17 @@ class _MLP(nn.Module):
       return {"leaky-relu": nn.LeakyReLU,
               "tanh": nn.Tanh,
               "sigmoid": nn.Sigmoid,
-              "relu": nn.ReLU}[x]
+              "relu": nn.ReLU,
+              "identity": nn.Identity}[x]
     activations = [map(x) for x in activations]
 
     structure = []
     for (isize, osize), cls in zip(pairwise(dims), activations):
       structure.extend((nn.Linear(isize, osize),
                         cls()))
-    self.body = nn.Sequential(*structure)
+    
+    super().__init__(*structure)
 
-  def forward(self, input):
-    return self.body(input)
 
 class MLP(nn.Module):
   """Standard feedforward network.

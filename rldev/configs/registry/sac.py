@@ -1,5 +1,5 @@
 
-from rldev.agents.pref.sac import DiagGaussianActor, DoubleQCritic
+from rldev.agents.pref.sac import DiagGaussianActor, QFunction
 from rldev.configs.xconf import Conf
 from rldev.configs.registry.registry import register
 
@@ -36,7 +36,7 @@ conf.query.mode = "uniform"
 conf.query.kwargs = dict()
 
 conf.qf = Conf()
-conf.qf.cls = DoubleQCritic
+conf.qf.cls = QFunction
 conf.qf.kwargs = Conf()
 conf.qf.kwargs.hidden_dim = 256
 conf.qf.kwargs.hidden_depth = 3

@@ -3,18 +3,22 @@ import math
 import numpy as np
 import torch
 import torch as th
-import torch.nn.functional as F
 
+from gymnasium import spaces
 from overrides import overrides
 from pathlib import Path
+from typing import *
+
 from torch import distributions as pyd
 from torch import nn
+from torch.nn import functional as F
 
 from rldev.agents.core import Node
 from rldev.agents.pref import utils
 from rldev.utils import gym_types
 from rldev.utils import torch as thu
 from rldev.utils.env import flatten_space
+from rldev.utils.nn import _MLP as MLP
 
 
 class TanhTransform(pyd.transforms.Transform):
@@ -71,75 +75,109 @@ class DiagGaussianActor(nn.Module):
   def __init__(self, 
                observation_space, 
                action_space, 
-               hidden_dim, 
-               hidden_depth,
+               dims: List[int],
+               lr: float,
+               betas: List[float],
+               decay: float,
                log_std_bounds):
     super().__init__()
 
-    obs_dim = observation_space.shape[0]
-    action_dim = action_space.shape[0]
+    odim, = observation_space.shape
+    adim, = action_space.shape
     self.log_std_bounds = log_std_bounds
-    self.trunk = utils.mlp(obs_dim, hidden_dim, 2 * action_dim, hidden_depth)
 
-    self.outputs = dict()
+    activations = ["relu"] * len(dims) + ["identity"]
+    self._pi = MLP([odim, *dims, 2 * adim], activations)
+
     self.apply(utils.weight_init)
 
+    self._optimizer = (
+      th.optim.Adam(self._pi.parameters(),
+                    lr=lr, betas=betas, weight_decay=decay))
+
+  @property
+  def optimizer(self):
+    return self._optimizer
+
+  def save(self, dir: Path):
+    dir.mkdir(parents=True, exist_ok=True)
+    th.save(self._optimizer.state_dict(), dir / "_optimizer.pt")
+    th.save(self._pi.state_dict(), dir / "_pi.pt")
+
+  def load(self, dir: Path):
+    ...
+
   def forward(self, obs):
-    mu, log_std = self.trunk(obs).chunk(2, dim=-1)
+    mu, log_std = self._pi(obs).chunk(2, dim=-1)
 
     # constrain log_std inside [log_std_min, log_std_max]
-    log_std = torch.tanh(log_std)
+    log_std = th.tanh(log_std)
     log_std_min, log_std_max = self.log_std_bounds
     log_std = log_std_min + 0.5 * (log_std_max - log_std_min) * (log_std + 1)
 
-    std = log_std.exp()
-
-    self.outputs['mu'] = mu
-    self.outputs['std'] = std
-
-    dist = SquashedNormal(mu, std)
+    dist = SquashedNormal(mu, log_std.exp())
     return dist
 
 
-############################################################
-############################################################
-############################################################
-############################################################
-############################################################
-                
-import numpy as np
-import torch
-import torch.nn.functional as F
-from rldev.agents.pref import utils
+class QFunction(nn.Module):
 
-from torch import nn
+  class Funcs(nn.Module):
 
-class DoubleQCritic(nn.Module):
-  """Critic network, employes double Q-learning."""
+    def __init__(self, dims, n):
+      super().__init__()
+      activations = ["relu"] * (len(dims) - 2) + ["identity"]
+      self._body = nn.ModuleList([
+          MLP(dims, activations=activations) 
+            for _ in range(n)])
+      self.apply(utils.weight_init)
+    
+    def forward(self, observation, action):
+      return [f(torch.cat([observation, action], dim=-1)) 
+              for f in self._body]
 
   def __init__(self, 
-               observation_space, action_space, hidden_dim, hidden_depth):
+               observation_space: spaces.Box, 
+               action_space: spaces.Box, 
+               dims: List[int],
+               lr: float,
+               betas: List[float],
+               decay: float,
+               n_qfuncs: int = 2):
     super().__init__()
 
-    obs_dim = observation_space.shape[0]
-    action_dim = action_space.shape[0]
-    self.Q1 = utils.mlp(obs_dim + action_dim, hidden_dim, 1, hidden_depth)
-    self.Q2 = utils.mlp(obs_dim + action_dim, hidden_dim, 1, hidden_depth)
+    odim, = observation_space.shape
+    adim, = action_space.shape
 
-    self.outputs = dict()
-    self.apply(utils.weight_init)
+    def qfuncs():
+      return QFunction.Funcs([odim + adim, *dims, 1], n_qfuncs)    
 
-  def forward(self, obs, action):
-    assert obs.size(0) == action.size(0)
+    self._qf = qfuncs()
+    self._qf_target = qfuncs()
+    self._qf_target.load_state_dict(self._qf.state_dict())
 
-    obs_action = torch.cat([obs, action], dim=-1)
-    q1 = self.Q1(obs_action)
-    q2 = self.Q2(obs_action)
+    self._optimizer = (
+      th.optim.Adam(self._qf.parameters(),
+                    lr=lr, betas=betas, weight_decay=decay))
 
-    self.outputs['q1'] = q1
-    self.outputs['q2'] = q2
+  @property
+  def target(self):
+    return self._qf_target
 
-    return q1, q2
+  @property
+  def optimizer(self):
+    return self._optimizer
+
+  def save(self, dir: Path):
+    dir.mkdir(parents=True, exist_ok=True)
+    th.save(self._optimizer.state_dict(), dir / "_optimizer.pt")
+    th.save(self._qf.state_dict(), dir / "_qf.pt")
+    th.save(self._qf_target.state_dict(), dir / "_qf_target.pt")
+
+  def load(self, dir: Path):
+    ...
+
+  def forward(self, observation, action):
+    return self._qf(observation, action)
 
 ############################################################
 ############################################################
@@ -198,14 +236,14 @@ class SACPolicy(Node):
     self.action_range = [float(action_space.low.min()), float(action_space.high.max())]
     self.device = thu.device()
     self.discount = discount
-    self.critic_tau = critic_tau
+    self._qf_tau = critic_tau
     self.actor_update_frequency = actor_update_frequency
-    self.critic_target_update_frequency = critic_target_update_frequency
+    self._qf_target_update_frequency = critic_target_update_frequency
     self.batch_size = batch_size
     self.learnable_temperature = learnable_temperature
 
-    self.critic_lr = critic_lr
-    self.critic_betas = critic_betas
+    self._qf_lr = critic_lr
+    self._qf_betas = critic_betas
     self.s_ent_stats = utils.TorchRunningMeanStd(shape=[1], device=thu.device())
     self.normalize_state_entropy = normalize_state_entropy
     self.init_temperature = init_temperature
@@ -219,16 +257,18 @@ class SACPolicy(Node):
 
     self.qf_kwargs = {"observation_space": observation_space,
                       "action_space": action_space,
-                      "hidden_dim": qf_hidden_dim,
-                      "hidden_depth": qf_hidden_depth}
-    self.critic = DoubleQCritic(**self.qf_kwargs).to(self.device)
-    self.critic_target = DoubleQCritic(**self.qf_kwargs).to(self.device)
-    self.critic_target.load_state_dict(self.critic.state_dict())
+                      "dims": [qf_hidden_dim] * qf_hidden_depth,
+                      "lr": critic_lr,
+                      "betas": critic_betas,
+                      "decay": 0.0}
+    self._qf = QFunction(**self.qf_kwargs).to(self.device)
 
     self.pi_kwargs = {"observation_space": observation_space,
                       "action_space": action_space,
-                      "hidden_dim": pi_hidden_dim,
-                      "hidden_depth": pi_hidden_depth,
+                      "dims": [pi_hidden_dim] * pi_hidden_depth,
+                      "lr": actor_lr,
+                      "betas": actor_betas,
+                      "decay": 0.0,
                       "log_std_bounds": pi_log_std_bounds}
     self._pi = DiagGaussianActor(**self.pi_kwargs).to(self.device)
     self.log_alpha = torch.tensor(np.log(init_temperature)).to(self.device)
@@ -239,14 +279,6 @@ class SACPolicy(Node):
     self.target_entropy = -action_space.shape[0]
 
     # optimizers
-    self._pi_optimizer = torch.optim.Adam(
-        self._pi.parameters(),
-        lr=actor_lr,
-        betas=actor_betas)
-    self._qf_optimizer = torch.optim.Adam(
-        self.critic.parameters(),
-        lr=critic_lr,
-        betas=critic_betas)
     self.log_alpha_optimizer = torch.optim.Adam(
         [self.log_alpha],
         lr=alpha_lr,
@@ -254,16 +286,9 @@ class SACPolicy(Node):
     
     # change mode
     self.train()
-    self.critic_target.train()
   
   def reset_critic(self):
-    self.critic = DoubleQCritic(**self.qf_kwargs).to(self.device)
-    self.critic_target = DoubleQCritic(**self.qf_kwargs).to(self.device)
-    self.critic_target.load_state_dict(self.critic.state_dict())
-    self._qf_optimizer = torch.optim.Adam(
-        self.critic.parameters(),
-        lr=self.critic_lr,
-        betas=self.critic_betas)
+    self._qf = QFunction(**self.qf_kwargs).to(self.device)
   
   def reset_actor(self):
     # reset log_alpha
@@ -276,15 +301,11 @@ class SACPolicy(Node):
     
     # reset actor
     self._pi = DiagGaussianActor(**self.pi_kwargs).to(self.device)
-    self._pi_optimizer = torch.optim.Adam(
-        self._pi.parameters(),
-        lr=self.actor_lr,
-        betas=self.actor_betas)
       
   def train(self, training=True):
     self.training = training
     self._pi.train(training)
-    self.critic.train(training)
+    self._qf.train(training)
 
   @property
   def alpha(self):
@@ -309,14 +330,14 @@ class SACPolicy(Node):
     dist = self._pi(next_obs)
     next_action = dist.rsample()
     log_prob = dist.log_prob(next_action).sum(-1, keepdim=True)
-    target_Q1, target_Q2 = self.critic_target(next_obs, next_action)
+    target_Q1, target_Q2 = self._qf.target(next_obs, next_action)
     target_V = torch.min(target_Q1,
                           target_Q2) - self.alpha.detach() * log_prob
     target_Q = reward + (not_done * self.discount * target_V)
     target_Q = target_Q.detach()
 
     # get current Q estimates
-    current_Q1, current_Q2 = self.critic(obs, action)
+    current_Q1, current_Q2 = self._qf(obs, action)
     critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(
         current_Q2, target_Q)
     
@@ -324,9 +345,9 @@ class SACPolicy(Node):
     #     logger.log('train_critic/loss', critic_loss, step)
 
     # Optimize the critic
-    self._qf_optimizer.zero_grad()
+    self._qf.optimizer.zero_grad()
     critic_loss.backward()
-    self._qf_optimizer.step()
+    self._qf.optimizer.step()
       
   def update_critic_state_ent(
       self, obs, full_obs, action, next_obs, not_done, logger,
@@ -335,23 +356,14 @@ class SACPolicy(Node):
     dist = self._pi(next_obs)
     next_action = dist.rsample()
     log_prob = dist.log_prob(next_action).sum(-1, keepdim=True)
-    target_Q1, target_Q2 = self.critic_target(next_obs, next_action)
+    target_Q1, target_Q2 = self._qf.target(next_obs, next_action)
     target_V = torch.min(target_Q1, target_Q2) - self.alpha.detach() * log_prob
     
     # compute state entropy
     state_entropy = compute_state_entropy(obs, full_obs, k=K)
-    # if print_flag:
-    #     logger.log("train_critic/entropy", state_entropy.mean(), step)
-    #     logger.log("train_critic/entropy_max", state_entropy.max(), step)
-    #     logger.log("train_critic/entropy_min", state_entropy.min(), step)
     
     self.s_ent_stats.update(state_entropy)
     norm_state_entropy = state_entropy / self.s_ent_stats.std
-    
-    # if print_flag:
-    #     logger.log("train_critic/norm_entropy", norm_state_entropy.mean(), step)
-    #     logger.log("train_critic/norm_entropy_max", norm_state_entropy.max(), step)
-    #     logger.log("train_critic/norm_entropy_min", norm_state_entropy.min(), step)
     
     if self.normalize_state_entropy:
       state_entropy = norm_state_entropy
@@ -360,7 +372,7 @@ class SACPolicy(Node):
     target_Q = target_Q.detach()
 
     # get current Q estimates
-    current_Q1, current_Q2 = self.critic(obs, action)
+    current_Q1, current_Q2 = self._qf(obs, action)
     critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(
         current_Q2, target_Q)
     
@@ -368,28 +380,15 @@ class SACPolicy(Node):
     #     logger.log('train_critic/loss', critic_loss, step)
 
     # Optimize the critic
-    self._qf_optimizer.zero_grad()
+    self._qf.optimizer.zero_grad()
     critic_loss.backward()
-    self._qf_optimizer.step()
+    self._qf.optimizer.step()
   
   @overrides
   def save(self, dir: Path):
     dir.mkdir(parents=True, exist_ok=True)
-
-    # with open(dir / "_pi_parameters.pkl", "wb") as fout:
-    #   pickle.dump(self._pi_parameters, fout)
-    # with open(dir / "_qf_parameters.pkl", "wb") as fout:
-    #   pickle.dump(self._qf_parameters, fout)
-    
-    th.save(self._pi_optimizer, dir / "_pi_optimizer.pt")
-    th.save(self._pi, dir / "_pi.pt")
-    # th.save(self._pi_target, dir / "_pi_target.pt")
-
-    th.save(self._qf_optimizer, dir / "_qf_optimizer.pt")
-    # for i, qf in enumerate(self._qf):
-    #   th.save(qf, dir / f"_qf_{i}.pt")
-    # for i, qf_target in enumerate(self._qf_target):
-    #   th.save(qf_target, dir / f"_qf_target_{i}.pt")
+    self._pi.save(dir / "_pi")
+    self._qf.save(dir / "_qf")
 
   @overrides
   def load(self, dir: Path): ...
@@ -398,7 +397,7 @@ class SACPolicy(Node):
     dist = self._pi(obs)
     action = dist.rsample()
     log_prob = dist.log_prob(action).sum(-1, keepdim=True)
-    actor_Q1, actor_Q2 = self.critic(obs, action)
+    actor_Q1, actor_Q2 = self._qf(obs, action)
 
     actor_Q = torch.min(actor_Q1, actor_Q2)
     actor_loss = (self.alpha.detach() * log_prob - actor_Q).mean()
@@ -408,9 +407,9 @@ class SACPolicy(Node):
     #     logger.log('train_actor/entropy', -log_prob.mean(), step)
 
     # optimize the actor
-    self._pi_optimizer.zero_grad()
+    self._pi.optimizer.zero_grad()
     actor_loss.backward()
-    self._pi_optimizer.step()
+    self._pi.optimizer.step()
 
     if self.learnable_temperature:
       self.log_alpha_optimizer.zero_grad()
@@ -438,9 +437,9 @@ class SACPolicy(Node):
       if step % self.actor_update_frequency == 0:
         self.update_actor_and_alpha(obs, logger, step, print_flag)
 
-    if step % self.critic_target_update_frequency == 0:
-      utils.soft_update_params(self.critic, self.critic_target,
-                                self.critic_tau)
+    if step % self._qf_target_update_frequency == 0:
+      utils.soft_update_params(self._qf, self._qf.target,
+                                self._qf_tau)
           
   def update_state_ent(self, replay_buffer, logger, step, gradient_update=1, K=5):
     for index in range(gradient_update):
@@ -459,6 +458,6 @@ class SACPolicy(Node):
       if step % self.actor_update_frequency == 0:
         self.update_actor_and_alpha(obs, logger, step, print_flag)
 
-    if step % self.critic_target_update_frequency == 0:
-      utils.soft_update_params(self.critic, self.critic_target,
-                                self.critic_tau)
+    if step % self._qf_target_update_frequency == 0:
+      utils.soft_update_params(self._qf, self._qf.target,
+                                self._qf_tau)
