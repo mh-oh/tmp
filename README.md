@@ -72,6 +72,12 @@ $ python experiments/ddpg+her.py ddpg+her --env=<environment> --num_envs=8 --see
   * point-maze-o
   * point-maze-o-dense
 
+### SAC
+```console
+$ python experiments/sac.py sac --env=<environment> --num_envs=1 --seed=1
+```
+* ``<environment>`` Run ``list_envs.py`` and choose one from the outputs.
+
 ### PEBBLE
 ```console
 $ python experiments/pebble.py <conf> --env=<environment> --num_envs=1 --seed=1
