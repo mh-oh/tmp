@@ -83,7 +83,9 @@ $ python experiments/pebble.py <conf> --env=<environment> --num_envs=1 --seed=1
 
 ## Using launcher to run multiple experiments at once
 
-Make a text file, say ``experiments.txt``, with the following contents.
+### ``tmux``
+
+Make a text file, say ``experiments.tmux``, with the following contents.
 ```
 python experiments/ddpg+her.py ddpg+her --env=fetch-push --num_envs=8 --seed=1
 python experiments/ddpg+her.py ddpg+her --env=fetch-push --num_envs=8 --seed=2
@@ -92,15 +94,48 @@ python experiments/ddpg+her.py ddpg+her --env=fetch-push --num_envs=8 --seed=3
 
 Then, execute:
 ```console
-$ python launcher.py experiments.txt --me=<user>
+$ python tmux.py experiments.tmux --me=<user>
 ```
 - ``<user>`` must be your username in the local machine where the above command runs.
 
 After that, you will see some prompts that you should properly follow.
 
-- You must properly change the contents of ``launcher_header.sh``.
-- Add commands that should be excecuted before running each command in ``experiments.txt``.
 - Do not make tmux sessions with names starting with ``__autogen__``.
+- You must properly change the contents of ``tmux_header.sh``.
+  - Add commands that should be excecuted before running each command in ``experiments.tmux``.
+
+### ``slurm``
+
+Make a YAML file, say ``experiments.slurm``, with the following contents.
+```
+A5000@n37:
+  commands:
+    - python experiments/pebble.py uniform --env=point-maze/large-2-3-path-distance-v0 --num_envs=1 --seed=1
+A6000@n35:
+  commands:
+    - python experiments/pebble.py entropy --env=point-maze/large-2-3-path-distance-v0 --num_envs=1 --seed=2
+A100-pci@n35:
+  commands:
+    - python experiments/pebble.py entropy-kmeans-2-traj --env=point-maze/large-2-3-path-distance-v0 --num_envs=1 --seed=3
+    - python experiments/pebble.py entropy-kmeans-2-traj --env=point-maze/large-2-3-path-distance-v0 --num_envs=1 --seed=4
+```
+
+Note that the valid format is as follow.
+```
+<partition>@<nodelist>:
+  commands:
+    - <command 1>
+    - <command 2>
+    - ...
+```
+
+Then, execute:
+```console
+$ python slurm.py experiments.slurm
+```
+
+- You must properly change the contents of ``slurm_header.sh``.
+  - Add commands that should be excecuted before running each command in ``experiments.slurm``.
 
 ## Visualization
 
