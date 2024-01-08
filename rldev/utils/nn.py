@@ -1,8 +1,7 @@
 
 import numpy as np
+import itertools
 import torch
-
-from itertools import repeat
 
 from torch.distributions import Normal, OneHotCategorical
 from torch import nn
@@ -64,7 +63,7 @@ class _MLP(nn.Module):
 
     layers = len(dims) - 1
     if not isinstance(activations, (list, tuple)):
-      activations = repeat(activations, times=layers)
+      activations = itertools.repeat(activations, times=layers)
 
     def map(x):
       if not isinstance(x, str):

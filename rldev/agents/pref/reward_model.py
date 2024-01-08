@@ -7,7 +7,7 @@ import torch.nn.functional as F
 import time
 
 from gymnasium import spaces
-from itertools import combinations, repeat
+from itertools import combinations
 from overrides import overrides
 from pathlib import Path
 from typing import *
@@ -18,41 +18,9 @@ from rldev.buffers.basic import EpisodicDictBuffer
 from rldev.utils import gym_types
 from rldev.utils import torch as thu
 from rldev.utils.env import flatten_space, flatten_observation
-from rldev.utils.structure import isiterable, pairwise
+from rldev.utils.nn import _MLP as MLP
 
 device = 'cuda'
-
-
-class MLP(nn.Module):
-
-  def __init__(self, dims, activations):
-    super().__init__()
-    
-    if not isiterable(dims):
-      raise ValueError(f"'dims' should be iterable")
-
-    layers = len(dims) - 1
-    if not isiterable(activations):
-      activations = repeat(activations, times=layers)
-
-    def map(x):
-      if not isinstance(x, str):
-        return x
-      return {"leaky-relu": nn.LeakyReLU,
-              "tanh": nn.Tanh,
-              "sigmoid": nn.Sigmoid,
-              "relu": nn.ReLU}[x]
-    activations = [map(x) for x in activations]
-
-    structure = []
-    for (isize, osize), cls in zip(pairwise(dims), activations):
-      structure.extend((nn.Linear(isize, osize),
-                        cls()))
-    self.body = nn.Sequential(*structure)
-
-  def forward(self, input):
-    return self.body(input)
-
 
 def KCenterGreedy(obs, full_obs, num_new_sample):
   selected_index = []
