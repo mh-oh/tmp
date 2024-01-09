@@ -233,9 +233,17 @@ def batchify(length, size):
 
 
 def chunk(sequence, n):
-  k, m = divmod(len(sequence), n)
-  return (sequence[i*k+min(i, m):(i+1)*k+min(i+1, m)] for i in range(n))
+  
+  def _do(sequence, n):
+    k, m = divmod(len(sequence), n)
+    for i in range(n):
+      yield sequence[i * k + min(i, m) : (i + 1) * k + min(i + 1, m)]
 
+  if not isinstance(sequence, int):
+    yield from _do(sequence, n)
+  else:
+    for sub in _do(list(range(sequence)), n):
+      yield len(sub)
 
 def isiterable(obj):
   try:

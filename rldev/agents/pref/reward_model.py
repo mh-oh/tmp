@@ -1,9 +1,8 @@
 
 import numpy as np
+import pickle
 import torch
 import torch as th
-import torch.nn as nn
-import torch.nn.functional as F
 import time
 
 from gymnasium import spaces
@@ -11,6 +10,9 @@ from itertools import combinations
 from overrides import overrides
 from pathlib import Path
 from typing import *
+
+from torch import nn
+from torch.nn import functional as F
 
 from rldev.agents.core import Node, Agent
 from rldev.agents.pref.models import Fusion
@@ -230,6 +232,19 @@ class RewardModel(Node):
     th.save(self._r_optimizer, dir / "_r_optimizer.pt")
     th.save(self._r, dir / "_r.pt")
 
+    def save_nosync(file, obj):
+      with open(dir / f"{file}.npy.nosync", "wb") as fout:
+        np.save(fout, obj)
+    
+    save_nosync("_feedbacks_first", self._feedbacks_first)
+    save_nosync("_feedbacks_second", self._feedbacks_second)
+    save_nosync("_feedbacks_label", self._feedbacks_label)
+
+    with open(dir / "_cursor.pkl", "wb") as fout:
+      pickle.dump(self._cursor, fout)
+    with open(dir / "_full.pkl", "wb") as fout:
+      pickle.dump(self._full, fout)
+
   @overrides
   def load(self, dir: Path):
     ...
@@ -237,7 +252,6 @@ class RewardModel(Node):
   def get_train_acc(self):
     ensemble_acc = np.array([0 for _ in range(self._fusion)])
     max_len = self._capacity if self._full else self._cursor
-    total_batch_index = np.random.permutation(max_len)
     batch_size = 256
     num_epochs = int(np.ceil(max_len/batch_size))
     
@@ -293,34 +307,20 @@ class RewardModel(Node):
                              cluster_discard_outlier=True):
     u"""Random uniform pairs of segments with matching targets."""
 
-    episodes = self._episodes()
-
-    goals = []
-    for episode in episodes:
-      y = np.unique(episode.observation["desired_goal"], axis=0)
-      assert len(y) == 1
-      goals.append(y[0])
-    goals = np.array(goals)
-
-    cluster = cluster.fit(goals)
-
     from rldev.utils.structure import chunk
-
-    labels = set(cluster.labels_)
-    if cluster_discard_outlier:
-      print("discard")
-      labels.discard(-1)
-    print(labels)
+    clusters = self._compute_clusters(
+      self._episodes(), cluster, cluster_discard_outlier)
+  
     pairs = []
-    for x in chunk(range(n), len(labels)):
-      g = labels.pop()
-
-      mask = cluster.labels_ == g
-      pairs.append([*self._random_pairs(episodes[mask], len(x), self._segment_length)])
+    for (_, cluster), k in zip(clusters, 
+                               chunk(n, len(clusters))):
+      pairs.append([
+        *self._random_pairs(cluster, 
+                            k, 
+                            self._segment_length)])
     pairs = np.array(pairs, dtype=object)
-    first, second = (np.concatenate(pairs[:, 0], axis=0),
-                     np.concatenate(pairs[:, 1], axis=0))
-    return first, second
+    return (np.concatenate(pairs[:, 0], axis=0),
+            np.concatenate(pairs[:, 1], axis=0))
   
   def _query_entropy(self, n, *, scale):
     u"""Entropy."""
@@ -356,16 +356,26 @@ class RewardModel(Node):
     return np.array(
       list(self._buffer.get_episodes()), dtype=object)
 
-  def _random_pairs(self, episodes, n, segment_length):
-
-    first = self._segment(episodes, size=segment_length)
-    second = self._segment(episodes, size=segment_length)
-    return self._sample(first, n), self._sample(second, n)
-
   def _sample(self, episodes, n):
     u"""Sample `n` samples randomly from `episodes`."""
     return episodes[
       np.random.choice(len(episodes), size=n, replace=True)]
+
+  def _random_pairs(self, episodes, n, segment_length):
+    u"""Sample `n` random pairs of segments."""
+    def segments():
+      return self._segment(episodes, size=segment_length)
+    return (self._sample(segments(), n), 
+            self._sample(segments(), n))
+
+  def _discover_targets(self, episodes):
+    u"""Extranct targets from `episodes`."""
+    targets = []
+    for episode in episodes:
+      target, = np.unique(
+        episode.observation["desired_goal"], axis=0)
+      targets.append(target)
+    return np.array(targets)
 
   def _compute_clusters(self, 
                         episodes, 
@@ -373,45 +383,21 @@ class RewardModel(Node):
                         cluster_discard_outlier):
     u"""Cluster `episodes` based on their desired goals."""
 
-    targets = []
-    for episode in episodes:
-      y = np.unique(episode.observation["desired_goal"], axis=0)
-      assert len(y) == 1
-      targets.append(y[0])
-    targets = np.array(targets)
-
-    cluster = cluster.fit(targets)
-
-    labels_ = set(cluster.labels_)
-    
-    labels = []
-    cluters = []
-    for g in labels_:
-      if cluster_discard_outlier and g == -1:
-        continue
-      mask = cluster.labels_ == g
-      labels.append(g)
-      cluters.append(episodes[mask])
-
-    return labels, cluters
-    targets = []
-    for episode in episodes:
-      target, = np.unique(
-        episode.observation["desired_goal"], axis=0)
-      targets.append(target)
-
-    targets = np.array(targets)
-    cluster = cluster.fit(targets)
-
-    labels = cluster.labels_
+    targets = self._discover_targets(episodes)
+    labels = cluster.fit(targets).labels_
     if labels.ndim != 1:
       raise AssertionError(f"{labels.ndim} != 1")
 
     index = np.argsort(labels)
     unique, (_, *sections) = np.unique(labels[index],
                                        return_index=True)
-    return (unique.tolist(),
-            np.split(episodes[index], sections))
+    labels, clusters = (unique.tolist(),
+                        np.split(episodes[index], sections))
+    res = []
+    for label, cluster in zip(labels, clusters):
+      if not (cluster_discard_outlier and label == -1):
+        res.append((label, cluster))
+    return res
 
   def _every_pairs(self, episodes):
     u"""Find every pairs of trajectories."""
@@ -427,16 +413,17 @@ class RewardModel(Node):
     u"""Find every pairs of trajectories with matching 
     desired goals."""
 
-    labels, clusters = self._compute_clusters(episodes, cluster, cluster_discard_outlier)
-    pairs = []
-    for label, cluster in zip(labels, clusters):
-      pairs.append([*self._every_pairs(self._segment(cluster, length))])
-    pairs = np.array(pairs, dtype=object)
+    clusters = self._compute_clusters(
+      episodes, cluster, cluster_discard_outlier)
 
+    pairs = np.array([
+      [*self._every_pairs(self._segment(cluster, length))] 
+        for _, cluster in clusters], dtype=object)
     return (np.concatenate(pairs[:, 0], axis=0),
             np.concatenate(pairs[:, 1], axis=0))
 
   def _segment(self, episodes, size):
+    u"""Randomly segment `episodes` with size `size`."""
     def get(episode):
       steps = (np.arange(0, size) + 
                np.random.randint(
