@@ -40,7 +40,7 @@ u"""Launch the commands with slurm."""
 CONTENTS = r"""#!/bin/bash
 
 #SBATCH -J {job}
-#SBATCH -o {dir}/slurm.{job}.{time}.out
+#SBATCH -o {dir}/slurm.{time}.{job}.out
 #SBATCH -t 3-00:00:00
 
 #SBATCH -p {partition}
