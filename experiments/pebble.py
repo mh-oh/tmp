@@ -83,7 +83,6 @@ def main():
                   env.action_space,
                   env._max_episode_steps,
                   conf.fusion,
-                  conf.activation, 
                   conf.reward_lr,
                   budget=conf.budget, 
                   segment_length=conf.segment,

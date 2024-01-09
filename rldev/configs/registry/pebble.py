@@ -15,7 +15,6 @@ conf.budget = 50
 conf.reward_update = 10
 conf.topK = 5
 conf.fusion = 3
-conf.activation = "tanh"
 conf.max_feedback = 10000
 conf.large_batch = 10
 conf.label_margin = 0.0

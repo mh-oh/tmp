@@ -1,9 +1,11 @@
 
+import copy
 import numpy as np
 import pickle
 import torch as th
 import time
 
+from collections import OrderedDict
 from gymnasium import spaces
 from itertools import combinations
 from overrides import overrides
@@ -14,12 +16,11 @@ from torch import nn
 from torch.nn import functional as F
 
 from rldev.agents.core import Node, Agent
-from rldev.agents.pref.models import Fusion
 from rldev.buffers.basic import EpisodicDictBuffer
-from rldev.utils import gym_types
 from rldev.utils import torch as thu
-from rldev.utils.env import flatten_space, flatten_observation
-from rldev.utils.nn import _MLP as MLP
+from rldev.utils.env import *
+from rldev.agents.pref.models import FusionMLP
+
 
 device = 'cuda'
 
@@ -83,7 +84,6 @@ class RewardModel(Node):
                action_space: spaces.Box, 
                max_episode_steps: int,
                fusion: int,
-               activation: str,
                lr: float = 3e-4, 
                batch_size: int = 128,
                budget: int = 128, 
@@ -98,13 +98,11 @@ class RewardModel(Node):
                teacher_eps_equal=0):
     super().__init__(agent)
 
-    adim, = action_space.shape
-    if isinstance(observation_space, gym_types.Box):
-      odim, = observation_space.shape
-    elif isinstance(observation_space, gym_types.Dict):
-      odim, = flatten_space(observation_space).shape
-    else:
-      raise NotImplementedError()
+    odim = observation_dim(observation_space)
+    adim = action_dim(action_space)
+
+    self._observation_space = observation_space
+    self._action_space = action_space
 
     self._fusion = fusion
     self._segment_length = segment_length = min(max_episode_steps, segment_length)
@@ -112,23 +110,18 @@ class RewardModel(Node):
     self._batch_size = batch_size
     self._budget = budget
     self._effective_budget = budget
-    
+
     self._capacity = capacity
-    self._feedbacks_first = np.empty((capacity, segment_length, odim + adim), dtype=np.float32)
-    self._feedbacks_second = np.empty((capacity, segment_length, odim + adim), dtype=np.float32)
-    self._feedbacks_label = np.empty((capacity, 1), dtype=np.float32)
     self._cursor = 0
     self._full = False
-    
-    def thunk():
-      return MLP(dims=[odim + adim, 256, 256, 256, 1],
-                 activations=["leaky-relu",
-                              "leaky-relu",
-                              "leaky-relu",
-                              activation]).float().to(device)
 
-    self._r = Fusion([thunk for _ in range(fusion)])
-    self._r_optimizer = th.optim.Adam(self._r.parameters(), lr=lr)
+    self._feedbacks_1 = np.empty((capacity,), dtype=object)
+    self._feedbacks_2 = np.empty((capacity,), dtype=object)
+    self._feedbacks_y = np.empty((capacity, 1), dtype=np.float32)
+    
+    self._r = FusionMLP(observation_space,
+                        action_space,
+                        fusion=fusion, lr=lr)
 
     self._teacher_beta = teacher_beta
     self._teacher_gamma = teacher_gamma
@@ -199,8 +192,8 @@ class RewardModel(Node):
   def p_hat_member(self, x_1, x_2, member=-1):
     # softmaxing to get the probabilities according to eqn 1
     with th.no_grad():
-      r_hat1 = self._r[member](thu.th(x_1))
-      r_hat2 = self._r[member](thu.th(x_2))
+      r_hat1 = self._r[member](thu.torch(x_1))
+      r_hat2 = self._r[member](thu.torch(x_2))
       r_hat1 = r_hat1.sum(axis=1)
       r_hat2 = r_hat2.sum(axis=1)
       r_hat = th.cat([r_hat1, r_hat2], axis=-1)
@@ -211,8 +204,8 @@ class RewardModel(Node):
   def p_hat_entropy(self, x_1, x_2, member=-1):
     # softmaxing to get the probabilities according to eqn 1
     with th.no_grad():
-      r_hat1 = self._r[member](thu.th(x_1))
-      r_hat2 = self._r[member](thu.th(x_2))
+      r_hat1 = self._r[member](thu.torch(x_1))
+      r_hat2 = self._r[member](thu.torch(x_2))
       r_hat1 = r_hat1.sum(axis=1)
       r_hat2 = r_hat2.sum(axis=1)
       r_hat = th.cat([r_hat1, r_hat2], axis=-1)
@@ -221,23 +214,27 @@ class RewardModel(Node):
     ent = ent.sum(axis=-1).abs()
     return ent
 
-  def r_hat(self, x):
-    return self._r(th.from_numpy(x).float().to(device), reduce="mean")
+  def r_hat(self,
+            observation: OrderedDict,
+            action: np.ndarray):
+    observation = flatten_observation(
+      self._observation_space, observation)
+    return self._r(th.from_numpy(np.concatenate([observation, action], axis=-1)).float().to(device), reduce="mean")
   
   @overrides
   def save(self, dir: Path):
     dir.mkdir(parents=True, exist_ok=True)
     
-    th.save(self._r_optimizer, dir / "_r_optimizer.pt")
+    th.save(self._r.optimizer, dir / "_r_optimizer.pt")
     th.save(self._r, dir / "_r.pt")
 
     def save_nosync(file, obj):
       with open(dir / f"{file}.npy.nosync", "wb") as fout:
         np.save(fout, obj)
     
-    save_nosync("_feedbacks_first", self._feedbacks_first)
-    save_nosync("_feedbacks_second", self._feedbacks_second)
-    save_nosync("_feedbacks_label", self._feedbacks_label)
+    save_nosync("_feedbacks_1", self._feedbacks_1)
+    save_nosync("_feedbacks_2", self._feedbacks_2)
+    save_nosync("_feedbacks_y", self._feedbacks_y)
 
     with open(dir / "_cursor.pkl", "wb") as fout:
       pickle.dump(self._cursor, fout)
@@ -259,16 +256,18 @@ class RewardModel(Node):
       last_index = (epoch+1)*batch_size
       if (epoch+1)*batch_size > max_len:
         last_index = max_len
-          
-      sa_t_1 = self._feedbacks_first[epoch*batch_size:last_index]
-      sa_t_2 = self._feedbacks_second[epoch*batch_size:last_index]
-      labels = self._feedbacks_label[epoch*batch_size:last_index]
-      labels = th.from_numpy(labels.flatten()).long().to(device)
+
+      first, second, y = (self._feedbacks_1[epoch*batch_size:last_index],
+                          self._feedbacks_2[epoch*batch_size:last_index],
+                          self._feedbacks_y[epoch*batch_size:last_index])
+      sa_t_1, _ = self._unpack(first)
+      sa_t_2, _ = self._unpack(second)
+      labels = th.from_numpy(y.flatten()).long().to(device)
       total += labels.size(0)
       for member in range(self._fusion):
         # get logits
-        r_hat1 = self._r[member](thu.th(sa_t_1))
-        r_hat2 = self._r[member](thu.th(sa_t_2))
+        r_hat1 = self._r[member](thu.torch(sa_t_1))
+        r_hat2 = self._r[member](thu.torch(sa_t_2))
         r_hat1 = r_hat1.sum(axis=1)
         r_hat2 = r_hat2.sum(axis=1)
         r_hat = th.cat([r_hat1, r_hat2], axis=-1)                
@@ -281,15 +280,12 @@ class RewardModel(Node):
 
   def query(self, mode, **kwargs):
 
-    fn = getattr(self, f"_query_{mode}")
-    first, second = fn(self._effective_budget, **kwargs)
-    sa_t_1, sa_t_2, r_t_1, r_t_2 = self._compat(first, second)
-    # get labels
-    sa_t_1, sa_t_2, r_t_1, r_t_2, labels = self.get_label(
-        sa_t_1, sa_t_2, r_t_1, r_t_2)
-    if len(labels) > 0:
-      self.put_queries(sa_t_1, sa_t_2, labels)
-    return len(labels)
+    query = getattr(self, f"_query_{mode}")
+    first, second, label = self.answer(
+      *query(self._effective_budget, **kwargs))
+    if len(label) > 0:
+      self.store_feedbacks(first, second, label)
+    return len(label)
 
   u"""Acquisition functions.
   They return batched pair of segments."""
@@ -433,47 +429,41 @@ class RewardModel(Node):
 
   def _compat(self, first, second):
 
+    sa_t_1, r_t_1 = self._unpack(first)
+    sa_t_2, r_t_2 = self._unpack(second)
+
+    return sa_t_1, sa_t_2, r_t_1, r_t_2
+
+  def _unpack(self, segments):
+
     def fn(observation):
       env = self.agent._env
       return flatten_observation(env.envs[0].observation_space,
                                  observation)
 
-    def _compat(segments):
-      sa_t, r_t = [], []
-      for seg in segments:
-        sa_t.append(np.concatenate([fn(seg.observation), seg.action], axis=-1))
-        r_t.append(seg.reward)
-      return np.stack(sa_t, axis=0), np.stack(r_t, axis=0)[..., np.newaxis]
+    sa_t, r_t = [], []
+    for seg in segments:
+      sa_t.append(np.concatenate([fn(seg.observation), seg.action], axis=-1))
+      r_t.append(seg.reward)
+    return np.stack(sa_t, axis=0), np.stack(r_t, axis=0)[..., np.newaxis]
 
-    sa_t_1, r_t_1 = _compat(first)
-    sa_t_2, r_t_2 = _compat(second)
+  def store_feedbacks(self, first, second, labels):
+    sa_t_1, sa_t_2, r_t_1, r_t_2 = self._compat(first, second)
+    n = sa_t_1.shape[0]
 
-    return sa_t_1, sa_t_2, r_t_1, r_t_2
+    cursor = self._cursor
+    index = np.arange(cursor, cursor + n) % self._capacity
+    self._feedbacks_1[index] = copy.deepcopy(first)
+    self._feedbacks_2[index] = copy.deepcopy(second)
+    self._feedbacks_y[index] = copy.deepcopy(labels)
+    self._cursor = (cursor + n) % self._capacity
 
-  def put_queries(self, sa_t_1, sa_t_2, labels):
-    total_sample = sa_t_1.shape[0]
-    next_index = self._cursor + total_sample
-    if next_index >= self._capacity:
+    if cursor + n >= self._capacity:
       self._full = True
-      maximum_index = self._capacity - self._cursor
-      np.copyto(self._feedbacks_first[self._cursor:self._capacity], sa_t_1[:maximum_index])
-      np.copyto(self._feedbacks_second[self._cursor:self._capacity], sa_t_2[:maximum_index])
-      np.copyto(self._feedbacks_label[self._cursor:self._capacity], labels[:maximum_index])
 
-      remain = total_sample - (maximum_index)
-      if remain > 0:
-        np.copyto(self._feedbacks_first[0:remain], sa_t_1[maximum_index:])
-        np.copyto(self._feedbacks_second[0:remain], sa_t_2[maximum_index:])
-        np.copyto(self._feedbacks_label[0:remain], labels[maximum_index:])
+  def answer(self, first, second):
+    sa_t_1, sa_t_2, r_t_1, r_t_2 = self._compat(first, second)
 
-      self._cursor = remain
-    else:
-      np.copyto(self._feedbacks_first[self._cursor:next_index], sa_t_1)
-      np.copyto(self._feedbacks_second[self._cursor:next_index], sa_t_2)
-      np.copyto(self._feedbacks_label[self._cursor:next_index], labels)
-      self._cursor = next_index
-          
-  def get_label(self, sa_t_1, sa_t_2, r_t_1, r_t_2):
     assert len(sa_t_1) == self._effective_budget
     sum_r_t_1 = np.sum(r_t_1, axis=1)
     sum_r_t_2 = np.sum(r_t_2, axis=1)
@@ -489,6 +479,8 @@ class RewardModel(Node):
       sa_t_2 = sa_t_2[max_index]
       r_t_1 = r_t_1[max_index]
       r_t_2 = r_t_2[max_index]
+      first = first[max_index]
+      second = second[max_index]
       sum_r_t_1 = np.sum(r_t_1, axis=1)
       sum_r_t_2 = np.sum(r_t_2, axis=1)
     
@@ -524,7 +516,7 @@ class RewardModel(Node):
     # equally preferable
     labels[margin_index] = -1 
     
-    return sa_t_1, sa_t_2, r_t_1, r_t_2, labels
+    return first, second, labels
 
   def train_reward(self):
     ensemble_losses = [[] for _ in range(self._fusion)]
@@ -539,7 +531,7 @@ class RewardModel(Node):
     total = 0
     
     for epoch in range(num_epochs):
-      self._r_optimizer.zero_grad()
+      self._r.optimizer.zero_grad()
       loss = 0.0
       
       last_index = (epoch+1)*self._batch_size
@@ -550,17 +542,20 @@ class RewardModel(Node):
           
         # get random batch
         idxs = total_batch_index[member][epoch*self._batch_size:last_index]
-        sa_t_1 = self._feedbacks_first[idxs]
-        sa_t_2 = self._feedbacks_second[idxs]
-        labels = self._feedbacks_label[idxs]
-        labels = th.from_numpy(labels.flatten()).long().to(device)
+        first, second, y = (self._feedbacks_1[idxs],
+                            self._feedbacks_2[idxs],
+                            self._feedbacks_y[idxs])
+        sa_t_1, _ = self._unpack(first)
+        sa_t_2, _ = self._unpack(second)
+        
+        labels = th.from_numpy(y.flatten()).long().to(device)
         
         if member == 0:
           total += labels.size(0)
         
         # get logits
-        r_hat1 = self._r[member](thu.th(sa_t_1))
-        r_hat2 = self._r[member](thu.th(sa_t_2))
+        r_hat1 = self._r[member](thu.torch(sa_t_1))
+        r_hat2 = self._r[member](thu.torch(sa_t_2))
         r_hat1 = r_hat1.sum(axis=1)
         r_hat2 = r_hat2.sum(axis=1)
         r_hat = th.cat([r_hat1, r_hat2], axis=-1)
@@ -576,7 +571,7 @@ class RewardModel(Node):
         ensemble_acc[member] += correct
           
       loss.backward()
-      self._r_optimizer.step()
+      self._r.optimizer.step()
     
     ensemble_acc = ensemble_acc / total
     
@@ -596,7 +591,7 @@ class RewardModel(Node):
     total = 0
     
     for epoch in range(num_epochs):
-      self._r_optimizer.zero_grad()
+      self._r.optimizer.zero_grad()
       loss = 0.0
       
       last_index = (epoch+1)*self._batch_size
@@ -607,17 +602,20 @@ class RewardModel(Node):
           
         # get random batch
         idxs = total_batch_index[member][epoch*self._batch_size:last_index]
-        sa_t_1 = self._feedbacks_first[idxs]
-        sa_t_2 = self._feedbacks_second[idxs]
-        labels = self._feedbacks_label[idxs]
-        labels = th.from_numpy(labels.flatten()).long().to(device)
+        first, second, y = (self._feedbacks_1[idxs],
+                            self._feedbacks_2[idxs],
+                            self._feedbacks_y[idxs])
+        sa_t_1, _ = self._unpack(first)
+        sa_t_2, _ = self._unpack(second)
+
+        labels = th.from_numpy(y.flatten()).long().to(device)
         
         if member == 0:
           total += labels.size(0)
         
         # get logits
-        r_hat1 = self._r[member](thu.th(sa_t_1))
-        r_hat2 = self._r[member](thu.th(sa_t_2))
+        r_hat1 = self._r[member](thu.torch(sa_t_1))
+        r_hat2 = self._r[member](thu.torch(sa_t_2))
         r_hat1 = r_hat1.sum(axis=1)
         r_hat2 = r_hat2.sum(axis=1)
         r_hat = th.cat([r_hat1, r_hat2], axis=-1)
@@ -639,7 +637,7 @@ class RewardModel(Node):
         ensemble_acc[member] += correct
           
       loss.backward()
-      self._r_optimizer.step()
+      self._r.optimizer.step()
     
     ensemble_acc = ensemble_acc / total
     

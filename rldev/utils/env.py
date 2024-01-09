@@ -130,13 +130,36 @@ def observation_spec(space: gym_types.Space):
   raise NotImplementedError()
 
 
-def container(size, spec):
+def observation_dim(space):
+  if isinstance(space, spaces.Box):
+    return space.shape[0]
+  elif isinstance(space, spaces.Dict):
+    return flatten_space(space).shape[0]
+  raise NotImplementedError()
+
+
+def action_dim(space):
+  if isinstance(space, spaces.Box):
+    return space.shape[0]
+  raise NotImplementedError()
+
+
+def box_container(size, spec):
   return np.zeros((*size, *spec.shape), dtype=spec.dtype)
 
 
 def dict_container(size, spec):
   return recursive_map(
-    lambda spec: container(size, spec), spec)
+    lambda spec: box_container(size, spec), spec)
+
+
+def container(size, spec):
+  print(spec)
+  if isinstance(spec, Spec):
+    return box_container(size, spec)
+  elif isinstance(spec, OrderedDict):
+    return dict_container(size, spec)
+  raise NotImplementedError()
 
 
 def flatten_space(space):

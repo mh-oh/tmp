@@ -130,8 +130,7 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
         if done and terminal is not None:
           next_observation[i] = terminal
 
-      obs = flatten_observation(env.envs[0].observation_space, self.obs)
-      pseudo_reward = thu.numpy(self._reward_model.r_hat(np.concatenate([obs, action], axis=-1)))[..., 0]
+      pseudo_reward = thu.numpy(self._reward_model.r_hat(self.obs, action))[..., 0]
 
       # allow infinite bootstrap
       # self._done = float(self._done)

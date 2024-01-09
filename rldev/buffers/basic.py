@@ -93,7 +93,7 @@ class DictBuffer(Base):
     self._infos = [None for _ in range(self._capacity)]
 
   def _container(self, spec):
-    return container((self._capacity, self._n_envs), spec)
+    return box_container((self._capacity, self._n_envs), spec)
 
   def _dict_container(self, spec):
     return dict_container((self._capacity, self._n_envs), spec)
@@ -397,18 +397,12 @@ class PEBBLEBuffer(DictBuffer):
         yield maybe_tuple(
           s[i : min(i + size, length)] for s in sequences)
 
-    def fn(observation):
-      return flatten_observation(env.envs[0].observation_space,
-                                  observation)
-
     for batch in batchify(*index, size=256):
 
       observation = self._recursive_get(self._observations, batch)
-      observation = fn(observation)
       action = self._actions[batch]
 
-      input = np.concatenate([observation, action], axis=-1)      
-      pred_reward = predictor.r_hat(input)
+      pred_reward = predictor.r_hat(observation, action)
       self._rewards[batch] = thu.numpy(pred_reward)[..., 0]
 
 
