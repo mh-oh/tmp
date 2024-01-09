@@ -37,7 +37,7 @@ CONTENTS = r"""#!/bin/bash
 
 #SBATCH -J {job}
 #SBATCH -o slurm.{job}.{time}.out
-#SBATCH -t 03:00:00
+#SBATCH -t 3-00:00:00
 
 #SBATCH -p {partition}
 #SBATCH --gres=gpu:1
