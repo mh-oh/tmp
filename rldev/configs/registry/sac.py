@@ -6,7 +6,6 @@ from rldev.configs.registry.registry import register
 
 conf = Conf()
 
-conf.activation = 'tanh'
 conf.num_seed_steps = 1000
 conf.reset_update = 100
 
