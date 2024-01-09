@@ -106,7 +106,7 @@ class RewardModel(Node):
       raise NotImplementedError()
 
     self._fusion = fusion
-    self._segment_length = min(max_episode_steps, segment_length)
+    self._segment_length = segment_length = min(max_episode_steps, segment_length)
     self._max_episode_steps = max_episode_steps
     self._batch_size = batch_size
     self._budget = budget
