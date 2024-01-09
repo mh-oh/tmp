@@ -266,26 +266,32 @@ class RewardModel(Node):
     ensemble_acc = ensemble_acc / total
     return np.mean(ensemble_acc)
 
-  def _episodes(self):
-    return np.array(
-      list(self._buffer.get_episodes()), dtype=object)
-
   def query(self, mode, **kwargs):
 
     fn = getattr(self, f"_query_{mode}")
-    return fn(self._effective_budget, **kwargs)
+    first, second = fn(self._effective_budget, **kwargs)
+    sa_t_1, sa_t_2, r_t_1, r_t_2 = self._compat(first, second)
+    # get labels
+    sa_t_1, sa_t_2, r_t_1, r_t_2, labels = self.get_label(
+        sa_t_1, sa_t_2, r_t_1, r_t_2)
+    if len(labels) > 0:
+      self.put_queries(sa_t_1, sa_t_2, labels)
+    return len(labels)
 
-  def _random_pairs(self, episodes, n, segment_length):
+  u"""Acquisition functions.
+  They return batched pair of segments."""
 
-    first = self._segment(episodes, size=segment_length)
-    second = self._segment(episodes, size=segment_length)
-    return self._sample(first, n), self._sample(second, n)
+  def _query_uniform(self, n):
+    u"""Random uniform."""
+    return self._random_pairs(
+      self._episodes(), n, self._segment_length)
 
   def _query_uniform_aligned(self, 
                              n,
                              *,
                              cluster,
                              cluster_discard_outlier=True):
+    u"""Random uniform pairs of segments with matching targets."""
 
     episodes = self._episodes()
 
@@ -300,108 +306,66 @@ class RewardModel(Node):
 
     from rldev.utils.structure import chunk
 
-    _sa_t_1, _sa_t_2, _r_t_1, _r_t_2 = [], [], [], []
     labels = set(cluster.labels_)
     if cluster_discard_outlier:
       print("discard")
       labels.discard(-1)
     print(labels)
+    pairs = []
     for x in chunk(range(n), len(labels)):
       g = labels.pop()
 
       mask = cluster.labels_ == g
-      sa_t_1, sa_t_2, r_t_1, r_t_2 = self._compat(*self._random_pairs(episodes[mask], len(x), self._segment_length))
-      print(n, len(sa_t_1))
-      _sa_t_1.append(sa_t_1)
-      _sa_t_2.append(sa_t_2)
-      _r_t_1.append(r_t_1)
-      _r_t_2.append(r_t_2)
-    
-    sa_t_1 = np.concatenate(_sa_t_1, axis=0)
-    sa_t_2 = np.concatenate(_sa_t_2, axis=0)
-    r_t_1 = np.concatenate(_r_t_1, axis=0)
-    r_t_2 = np.concatenate(_r_t_2, axis=0)
-
-    # get labels
-    sa_t_1, sa_t_2, r_t_1, r_t_2, labels = self.get_label(
-        sa_t_1, sa_t_2, r_t_1, r_t_2)
-    
-    if len(labels) > 0:
-      self.put_queries(sa_t_1, sa_t_2, labels)
-    
-    return len(labels)
-
-  def _query_uniform(self, n):
-
-    episodes = self._episodes()
-
-    sa_t_1, sa_t_2, r_t_1, r_t_2 = self._compat(*self._random_pairs(episodes, n, self._segment_length))
-
-    # get labels
-    sa_t_1, sa_t_2, r_t_1, r_t_2, labels = self.get_label(
-        sa_t_1, sa_t_2, r_t_1, r_t_2)
-    
-    if len(labels) > 0:
-      self.put_queries(sa_t_1, sa_t_2, labels)
-    
-    return len(labels)
-
-  def _sample(self, episodes, n):
-    u"""Sample `n` samples randomly from `episodes`."""
-    return episodes[
-      np.random.choice(len(episodes), size=n, replace=True)]
+      pairs.append([*self._random_pairs(episodes[mask], len(x), self._segment_length)])
+    pairs = np.array(pairs, dtype=object)
+    first, second = (np.concatenate(pairs[:, 0], axis=0),
+                     np.concatenate(pairs[:, 1], axis=0))
+    return first, second
   
   def _query_entropy(self, n, *, scale):
+    u"""Entropy."""
 
-    episodes = self._episodes()
-    first = self._segment(episodes, size=self._segment_length)
-    second = self._segment(episodes, size=self._segment_length)
-
-    first, second = self._sample(first, n * scale), self._sample(second, n * scale)
-
+    first, second = self._random_pairs(self._episodes(), n * scale)
     sa_t_1, sa_t_2, r_t_1, r_t_2 = self._compat(first, second)
 
     entropy, _ = self.get_entropy(sa_t_1, sa_t_2)
     
-    top_k_index = (-entropy).argsort()[:self._effective_budget]
-    r_t_1, sa_t_1 = r_t_1[top_k_index], sa_t_1[top_k_index]
-    r_t_2, sa_t_2 = r_t_2[top_k_index], sa_t_2[top_k_index]
-    
-    # get labels
-    sa_t_1, sa_t_2, r_t_1, r_t_2, labels = self.get_label(    
-        sa_t_1, sa_t_2, r_t_1, r_t_2)
-    
-    if len(labels) > 0:
-      self.put_queries(sa_t_1, sa_t_2, labels)
-    
-    return len(labels)
+    topn = (-entropy).argsort()[:n]
+    return first[topn], second[topn]
 
   def _query_entropy_aligned(self, 
                              n,
                              *,
                              cluster,
                              cluster_discard_outlier=True):
+    u"""Top-`n` entropy pairs with matching targets."""
 
-    episodes = self._episodes()
     first, second = self._every_aligned_pairs(
-      episodes, self._segment_length, cluster, cluster_discard_outlier)
+      self._episodes(), self._segment_length, cluster, cluster_discard_outlier)
     
     sa_t_1, sa_t_2, r_t_1, r_t_2 = self._compat(first, second)
 
     entropy, _ = self.get_entropy(sa_t_1, sa_t_2)
     
-    top_k_index = (-entropy).argsort()[:self._effective_budget]
-    r_t_1, sa_t_1 = r_t_1[top_k_index], sa_t_1[top_k_index]
-    r_t_2, sa_t_2 = r_t_2[top_k_index], sa_t_2[top_k_index]
-    
-    # get labels
-    sa_t_1, sa_t_2, r_t_1, r_t_2, labels = self.get_label(    
-        sa_t_1, sa_t_2, r_t_1, r_t_2)
-    
-    if len(labels) > 0:
-      self.put_queries(sa_t_1, sa_t_2, labels)
-    
-    return len(labels)
+    topn = (-entropy).argsort()[:n]
+    return first[topn], second[topn]
+
+  u"""Common auxiliary functions."""
+
+  def _episodes(self):
+    return np.array(
+      list(self._buffer.get_episodes()), dtype=object)
+
+  def _random_pairs(self, episodes, n, segment_length):
+
+    first = self._segment(episodes, size=segment_length)
+    second = self._segment(episodes, size=segment_length)
+    return self._sample(first, n), self._sample(second, n)
+
+  def _sample(self, episodes, n):
+    u"""Sample `n` samples randomly from `episodes`."""
+    return episodes[
+      np.random.choice(len(episodes), size=n, replace=True)]
 
   def _compute_clusters(self, 
                         episodes, 
