@@ -1,7 +1,6 @@
 
 import numpy as np
 import pickle
-import torch
 import torch as th
 import time
 
@@ -32,7 +31,7 @@ def KCenterGreedy(obs, full_obs, num_new_sample):
   start_time = time.time()
   for count in range(num_new_sample):
     dist = compute_smallest_dist(new_obs, new_full_obs)
-    max_index = torch.argmax(dist)
+    max_index = th.argmax(dist)
     max_index = max_index.item()
     
     if count == 0:
@@ -50,10 +49,10 @@ def KCenterGreedy(obs, full_obs, num_new_sample):
 
 
 def compute_smallest_dist(obs, full_obs):
-  obs = torch.from_numpy(obs).float()
-  full_obs = torch.from_numpy(full_obs).float()
+  obs = th.from_numpy(obs).float()
+  full_obs = th.from_numpy(full_obs).float()
   batch_size = 100
-  with torch.no_grad():
+  with th.no_grad():
     total_dists = []
     for full_idx in range(len(obs) // batch_size + 1):
       full_start = full_idx * batch_size
@@ -64,15 +63,15 @@ def compute_smallest_dist(obs, full_obs):
           start = idx * batch_size
           if start < len(full_obs):
             end = (idx + 1) * batch_size
-            dist = torch.norm(
+            dist = th.norm(
                 obs[full_start:full_end, None, :].to(device) - full_obs[None, start:end, :].to(device), dim=-1, p=2
             )
             dists.append(dist)
-        dists = torch.cat(dists, dim=1)
-        small_dists = torch.torch.min(dists, dim=1).values
+        dists = th.cat(dists, dim=1)
+        small_dists = th.th.min(dists, dim=1).values
         total_dists.append(small_dists)
             
-    total_dists = torch.cat(total_dists)
+    total_dists = th.cat(total_dists)
   return total_dists.unsqueeze(1)
 
 
@@ -129,7 +128,7 @@ class RewardModel(Node):
                               activation]).float().to(device)
 
     self._r = Fusion([thunk for _ in range(fusion)])
-    self._r_optimizer = torch.optim.Adam(self._r.parameters(), lr=lr)
+    self._r_optimizer = th.optim.Adam(self._r.parameters(), lr=lr)
 
     self._teacher_beta = teacher_beta
     self._teacher_gamma = teacher_gamma
@@ -150,7 +149,7 @@ class RewardModel(Node):
                          action_space))
 
   def softXEnt_loss(self, input, target):
-    logprobs = torch.nn.functional.log_softmax (input, dim = 1)
+    logprobs = th.nn.functional.log_softmax (input, dim = 1)
     return  -(target * logprobs).sum() / input.shape[0]
   
   def change_batch(self, new_frac):
@@ -199,24 +198,24 @@ class RewardModel(Node):
 
   def p_hat_member(self, x_1, x_2, member=-1):
     # softmaxing to get the probabilities according to eqn 1
-    with torch.no_grad():
-      r_hat1 = self._r[member](thu.torch(x_1))
-      r_hat2 = self._r[member](thu.torch(x_2))
+    with th.no_grad():
+      r_hat1 = self._r[member](thu.th(x_1))
+      r_hat2 = self._r[member](thu.th(x_2))
       r_hat1 = r_hat1.sum(axis=1)
       r_hat2 = r_hat2.sum(axis=1)
-      r_hat = torch.cat([r_hat1, r_hat2], axis=-1)
+      r_hat = th.cat([r_hat1, r_hat2], axis=-1)
     
     # taking 0 index for probability x_1 > x_2
     return F.softmax(r_hat, dim=-1)[:,0]
   
   def p_hat_entropy(self, x_1, x_2, member=-1):
     # softmaxing to get the probabilities according to eqn 1
-    with torch.no_grad():
-      r_hat1 = self._r[member](thu.torch(x_1))
-      r_hat2 = self._r[member](thu.torch(x_2))
+    with th.no_grad():
+      r_hat1 = self._r[member](thu.th(x_1))
+      r_hat2 = self._r[member](thu.th(x_2))
       r_hat1 = r_hat1.sum(axis=1)
       r_hat2 = r_hat2.sum(axis=1)
-      r_hat = torch.cat([r_hat1, r_hat2], axis=-1)
+      r_hat = th.cat([r_hat1, r_hat2], axis=-1)
     
     ent = F.softmax(r_hat, dim=-1) * F.log_softmax(r_hat, dim=-1)
     ent = ent.sum(axis=-1).abs()
@@ -264,16 +263,16 @@ class RewardModel(Node):
       sa_t_1 = self._feedbacks_first[epoch*batch_size:last_index]
       sa_t_2 = self._feedbacks_second[epoch*batch_size:last_index]
       labels = self._feedbacks_label[epoch*batch_size:last_index]
-      labels = torch.from_numpy(labels.flatten()).long().to(device)
+      labels = th.from_numpy(labels.flatten()).long().to(device)
       total += labels.size(0)
       for member in range(self._fusion):
         # get logits
-        r_hat1 = self._r[member](thu.torch(sa_t_1))
-        r_hat2 = self._r[member](thu.torch(sa_t_2))
+        r_hat1 = self._r[member](thu.th(sa_t_1))
+        r_hat2 = self._r[member](thu.th(sa_t_2))
         r_hat1 = r_hat1.sum(axis=1)
         r_hat2 = r_hat2.sum(axis=1)
-        r_hat = torch.cat([r_hat1, r_hat2], axis=-1)                
-        _, predicted = torch.max(r_hat.data, 1)
+        r_hat = th.cat([r_hat1, r_hat2], axis=-1)                
+        _, predicted = th.max(r_hat.data, 1)
         correct = (predicted == labels).sum().item()
         ensemble_acc[member] += correct
             
@@ -508,11 +507,11 @@ class RewardModel(Node):
         
     rational_labels = 1*(sum_r_t_1 < sum_r_t_2)
     if self._teacher_beta > 0: # Bradley-Terry rational model
-      r_hat = torch.cat([torch.Tensor(sum_r_t_1), 
-                          torch.Tensor(sum_r_t_2)], axis=-1)
+      r_hat = th.cat([th.Tensor(sum_r_t_1), 
+                          th.Tensor(sum_r_t_2)], axis=-1)
       r_hat = r_hat*self._teacher_beta
       ent = F.softmax(r_hat, dim=-1)[:, 1]
-      labels = torch.bernoulli(ent).int().numpy().reshape(-1, 1)
+      labels = th.bernoulli(ent).int().numpy().reshape(-1, 1)
     else:
       labels = rational_labels
     
@@ -554,17 +553,17 @@ class RewardModel(Node):
         sa_t_1 = self._feedbacks_first[idxs]
         sa_t_2 = self._feedbacks_second[idxs]
         labels = self._feedbacks_label[idxs]
-        labels = torch.from_numpy(labels.flatten()).long().to(device)
+        labels = th.from_numpy(labels.flatten()).long().to(device)
         
         if member == 0:
           total += labels.size(0)
         
         # get logits
-        r_hat1 = self._r[member](thu.torch(sa_t_1))
-        r_hat2 = self._r[member](thu.torch(sa_t_2))
+        r_hat1 = self._r[member](thu.th(sa_t_1))
+        r_hat2 = self._r[member](thu.th(sa_t_2))
         r_hat1 = r_hat1.sum(axis=1)
         r_hat2 = r_hat2.sum(axis=1)
-        r_hat = torch.cat([r_hat1, r_hat2], axis=-1)
+        r_hat = th.cat([r_hat1, r_hat2], axis=-1)
 
         # compute loss
         curr_loss = nn.CrossEntropyLoss()(r_hat, labels)
@@ -572,7 +571,7 @@ class RewardModel(Node):
         ensemble_losses[member].append(curr_loss.item())
         
         # compute acc
-        _, predicted = torch.max(r_hat.data, 1)
+        _, predicted = th.max(r_hat.data, 1)
         correct = (predicted == labels).sum().item()
         ensemble_acc[member] += correct
           
@@ -611,22 +610,22 @@ class RewardModel(Node):
         sa_t_1 = self._feedbacks_first[idxs]
         sa_t_2 = self._feedbacks_second[idxs]
         labels = self._feedbacks_label[idxs]
-        labels = torch.from_numpy(labels.flatten()).long().to(device)
+        labels = th.from_numpy(labels.flatten()).long().to(device)
         
         if member == 0:
           total += labels.size(0)
         
         # get logits
-        r_hat1 = self._r[member](thu.torch(sa_t_1))
-        r_hat2 = self._r[member](thu.torch(sa_t_2))
+        r_hat1 = self._r[member](thu.th(sa_t_1))
+        r_hat2 = self._r[member](thu.th(sa_t_2))
         r_hat1 = r_hat1.sum(axis=1)
         r_hat2 = r_hat2.sum(axis=1)
-        r_hat = torch.cat([r_hat1, r_hat2], axis=-1)
+        r_hat = th.cat([r_hat1, r_hat2], axis=-1)
 
         # compute loss
         uniform_index = labels == -1
         labels[uniform_index] = 0
-        target_onehot = torch.zeros_like(r_hat).scatter(1, labels.unsqueeze(1), self._label_target)
+        target_onehot = th.zeros_like(r_hat).scatter(1, labels.unsqueeze(1), self._label_target)
         target_onehot += self._label_margin
         if sum(uniform_index) > 0:
           target_onehot[uniform_index] = 0.5
@@ -635,7 +634,7 @@ class RewardModel(Node):
         ensemble_losses[member].append(curr_loss.item())
         
         # compute acc
-        _, predicted = torch.max(r_hat.data, 1)
+        _, predicted = th.max(r_hat.data, 1)
         correct = (predicted == labels).sum().item()
         ensemble_acc[member] += correct
           
