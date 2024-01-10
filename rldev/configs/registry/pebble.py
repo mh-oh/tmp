@@ -25,6 +25,11 @@ conf.teacher_eps_skip = 0
 conf.teacher_eps_equal = 0
 conf.reward_schedule = 0
 
+conf.r = Conf()
+conf.r.cls = "FusionMLP"
+conf.r.kwargs = dict()
+conf.r.fusion = 3
+
 conf.query = Conf()
 conf.query.starter_mode = "uniform"
 conf.query.starter_kwargs = dict()

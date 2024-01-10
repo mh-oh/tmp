@@ -16,7 +16,7 @@ from torch import nn
 from torch.nn import functional as F
 
 from rldev.agents.core import Node, Agent
-from rldev.agents.pref.models import FusionMLP
+from rldev.agents.pref.models import FusionMLP, FusionDistanceL2
 from rldev.buffers.basic import EpisodicDictBuffer
 from rldev.utils import torch as thu
 from rldev.utils.env import *
@@ -84,7 +84,9 @@ class RewardModel(Node):
                observation_space: spaces.Dict, 
                action_space: spaces.Box, 
                max_episode_steps: int,
-               fusion: int,
+               r_fusion: int,
+               r_cls: type,
+               r_kwargs: Dict[str, Any],
                lr: float = 3e-4, 
                batch_size: int = 128,
                budget: int = 128, 
@@ -105,7 +107,7 @@ class RewardModel(Node):
     self._observation_space = observation_space
     self._action_space = action_space
 
-    self._fusion = fusion
+    self._fusion = r_fusion
     self._segment_length = segment_length = min(max_episode_steps, segment_length)
     self._max_episode_steps = max_episode_steps
     self._batch_size = batch_size
@@ -120,9 +122,11 @@ class RewardModel(Node):
     self._feedbacks_2 = np.empty((capacity,), dtype=object)
     self._feedbacks_y = np.empty((capacity, 1), dtype=np.float32)
     
-    self._r = FusionMLP(observation_space,
-                        action_space,
-                        fusion=fusion, lr=lr)
+    r_cls = {"FusionMLP": FusionMLP,
+             "FusionDistanceL2": FusionDistanceL2}[r_cls]
+    self._r = r_cls(observation_space, action_space, fusion=r_fusion, **r_kwargs)
+    self._r_optimizer = th.optim.Adam(self._r.parameters(), lr=lr)
+    print(self._r)
 
     self._teacher_beta = teacher_beta
     self._teacher_gamma = teacher_gamma
@@ -229,7 +233,7 @@ class RewardModel(Node):
   def save(self, dir: Path):
     dir.mkdir(parents=True, exist_ok=True)
     
-    th.save(self._r.optimizer, dir / "_r_optimizer.pt")
+    th.save(self._r_optimizer, dir / "_r_optimizer.pt")
     th.save(self._r, dir / "_r.pt")
 
     def save_nosync(file, obj):
@@ -537,7 +541,7 @@ class RewardModel(Node):
     total = 0
     
     for epoch in range(num_epochs):
-      self._r.optimizer.zero_grad()
+      self._r_optimizer.zero_grad()
       loss = 0.0
       
       last_index = (epoch+1)*self._batch_size
@@ -578,7 +582,7 @@ class RewardModel(Node):
         ensemble_acc[member] += correct
           
       loss.backward()
-      self._r.optimizer.step()
+      self._r_optimizer.step()
     
     ensemble_acc = ensemble_acc / total
     
@@ -598,7 +602,7 @@ class RewardModel(Node):
     total = 0
     
     for epoch in range(num_epochs):
-      self._r.optimizer.zero_grad()
+      self._r_optimizer.zero_grad()
       loss = 0.0
       
       last_index = (epoch+1)*self._batch_size
@@ -645,7 +649,7 @@ class RewardModel(Node):
         ensemble_acc[member] += correct
           
       loss.backward()
-      self._r.optimizer.step()
+      self._r_optimizer.step()
     
     ensemble_acc = ensemble_acc / total
     
