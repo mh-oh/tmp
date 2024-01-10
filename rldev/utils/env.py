@@ -1,5 +1,6 @@
 
 import numpy as np
+import torch as th
 
 from collections import OrderedDict
 from copy import deepcopy
@@ -7,7 +8,7 @@ from gymnasium import spaces
 from typing import *
 
 from rldev.utils import gym_types
-from rldev.utils.structure import AttrDict, recursive_map
+from rldev.utils.structure import AttrDict, recursive_map, instanceof
 
 
 def flatten_state(state, modalities=['observation', 'desired_goal']):
@@ -205,7 +206,14 @@ def flatten_observation(space: gym_types.Dict,
       if len(subspace.shape) > 1:
         raise ValueError()
     xs.append(x)
-  return np.concatenate(xs, axis=-1)
+
+  axis = -1
+  if instanceof(*xs, type=np.ndarray):
+    return np.concatenate(xs, axis=axis)
+  if instanceof(*xs, type=th.Tensor):
+    return th.cat(xs, dim=axis)
+
+  raise NotImplementedError()
 
 
 def get_success_info(info: dict):

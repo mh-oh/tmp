@@ -1,5 +1,6 @@
 
 import numpy as np
+import torch as th
 
 from collections import defaultdict, OrderedDict
 from collections.abc import *
@@ -258,3 +259,24 @@ def pairwise(iterable):
     a, b = tee(iterable)
     next(b, None)
     return zip(a, b)
+
+
+def instanceof(*inputs, type):
+  return all(isinstance(x, type) for x in inputs)
+
+
+def stack(inputs, axis):
+
+  if instanceof(*inputs, type=np.ndarray):
+    return np.stack(inputs, axis=axis)
+  if instanceof(*inputs, type=th.Tensor):
+    return th.stack(inputs, dim=axis)
+
+  if instanceof(*inputs, type=OrderedDict):
+    output = OrderedDict()
+    for dict in inputs:
+      for key, x in dict.items():
+        output.setdefault(key, []).append(x)
+    for key in output:
+      output[key] = stack(output[key], axis)
+    return output

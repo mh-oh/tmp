@@ -1,6 +1,6 @@
 
 import torch as th
-
+from collections import OrderedDict
 
 __device = "cuda"
 
@@ -10,6 +10,11 @@ def device():
 
 
 def torch(x, type=th.float):
+
+  if isinstance(x, (OrderedDict, dict)):
+    return OrderedDict([
+      (key, torch(sub)) for key, sub in x.items()])
+
   if isinstance(x, th.Tensor): return x
   elif type == th.float:
     return th.FloatTensor(x).to(device())

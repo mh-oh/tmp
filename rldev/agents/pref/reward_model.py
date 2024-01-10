@@ -16,10 +16,11 @@ from torch import nn
 from torch.nn import functional as F
 
 from rldev.agents.core import Node, Agent
+from rldev.agents.pref.models import FusionMLP
 from rldev.buffers.basic import EpisodicDictBuffer
 from rldev.utils import torch as thu
 from rldev.utils.env import *
-from rldev.agents.pref.models import FusionMLP
+from rldev.utils.structure import stack
 
 
 device = 'cuda'
@@ -172,40 +173,45 @@ class RewardModel(Node):
                      done,
                      {})
 
-  def get_rank_probability(self, x_1, x_2):
-    # get probability x_1 > x_2
-    probs = []
-    for member in range(self._fusion):
-      probs.append(self.p_hat_member(x_1, x_2, member=member).cpu().numpy())
-    probs = np.array(probs)
+  def _r_member(self, observation, action, member):
+    observation = flatten_observation(self._observation_space,
+                                      observation)
+    return self._r[member](thu.torch(np.concatenate([observation, action], axis=-1)))
+
+  # def get_rank_probability(self, x_1, x_2):
+  #   # get probability x_1 > x_2
+  #   probs = []
+  #   for member in range(self._fusion):
+  #     probs.append(self.p_hat_member(x_1, x_2, member=member).cpu().numpy())
+  #   probs = np.array(probs)
     
-    return np.mean(probs, axis=0), np.std(probs, axis=0)
+  #   return np.mean(probs, axis=0), np.std(probs, axis=0)
   
-  def get_entropy(self, x_1, x_2):
+  def get_entropy(self, first, second):
     # get probability x_1 > x_2
     probs = []
     for member in range(self._fusion):
-      probs.append(self.p_hat_entropy(x_1, x_2, member=member).cpu().numpy())
+      probs.append(self.p_hat_entropy(first, second, member=member).cpu().numpy())
     probs = np.array(probs)
     return np.mean(probs, axis=0), np.std(probs, axis=0)
 
-  def p_hat_member(self, x_1, x_2, member=-1):
-    # softmaxing to get the probabilities according to eqn 1
-    with th.no_grad():
-      r_hat1 = self._r[member](thu.torch(x_1))
-      r_hat2 = self._r[member](thu.torch(x_2))
-      r_hat1 = r_hat1.sum(axis=1)
-      r_hat2 = r_hat2.sum(axis=1)
-      r_hat = th.cat([r_hat1, r_hat2], axis=-1)
+  # def p_hat_member(self, x_1, x_2, member=-1):
+  #   # softmaxing to get the probabilities according to eqn 1
+  #   with th.no_grad():
+  #     r_hat1 = self._r_member(x_1, member) #self._r[member](thu.torch(x_1))
+  #     r_hat2 = self._r_member(x_2, member) #self._r[member](thu.torch(x_2))
+  #     r_hat1 = r_hat1.sum(axis=1)
+  #     r_hat2 = r_hat2.sum(axis=1)
+  #     r_hat = th.cat([r_hat1, r_hat2], axis=-1)
     
-    # taking 0 index for probability x_1 > x_2
-    return F.softmax(r_hat, dim=-1)[:,0]
+  #   # taking 0 index for probability x_1 > x_2
+  #   return F.softmax(r_hat, dim=-1)[:,0]
   
-  def p_hat_entropy(self, x_1, x_2, member=-1):
+  def p_hat_entropy(self, first, second, member=-1):
     # softmaxing to get the probabilities according to eqn 1
     with th.no_grad():
-      r_hat1 = self._r[member](thu.torch(x_1))
-      r_hat2 = self._r[member](thu.torch(x_2))
+      r_hat1 = self._r_member(*self._stack(first), member) #self._r[member](thu.torch(x_1))
+      r_hat2 = self._r_member(*self._stack(second), member) #self._r[member](thu.torch(x_2))
       r_hat1 = r_hat1.sum(axis=1)
       r_hat2 = r_hat2.sum(axis=1)
       r_hat = th.cat([r_hat1, r_hat2], axis=-1)
@@ -260,14 +266,16 @@ class RewardModel(Node):
       first, second, y = (self._feedbacks_1[epoch*batch_size:last_index],
                           self._feedbacks_2[epoch*batch_size:last_index],
                           self._feedbacks_y[epoch*batch_size:last_index])
-      sa_t_1, _ = self._unpack(first)
-      sa_t_2, _ = self._unpack(second)
+
+      observations_1, actions_1 = self._stack(first)
+      observations_2, actions_2 = self._stack(second)
       labels = th.from_numpy(y.flatten()).long().to(device)
+
       total += labels.size(0)
       for member in range(self._fusion):
         # get logits
-        r_hat1 = self._r[member](thu.torch(sa_t_1))
-        r_hat2 = self._r[member](thu.torch(sa_t_2))
+        r_hat1 = self._r_member(observations_1, actions_1, member) #self._r[member](thu.torch(sa_t_1))
+        r_hat2 = self._r_member(observations_2, actions_2, member) #self._r[member](thu.torch(sa_t_2))
         r_hat1 = r_hat1.sum(axis=1)
         r_hat2 = r_hat2.sum(axis=1)
         r_hat = th.cat([r_hat1, r_hat2], axis=-1)                
@@ -321,9 +329,8 @@ class RewardModel(Node):
     u"""Entropy."""
 
     first, second = self._random_pairs(self._episodes(), n * scale)
-    sa_t_1, sa_t_2, r_t_1, r_t_2 = self._compat(first, second)
 
-    entropy, _ = self.get_entropy(sa_t_1, sa_t_2)
+    entropy, _ = self.get_entropy(first, second)
     
     topn = (-entropy).argsort()[:n]
     return first[topn], second[topn]
@@ -338,9 +345,8 @@ class RewardModel(Node):
     first, second = self._every_aligned_pairs(
       self._episodes(), self._segment_length, cluster, cluster_discard_outlier)
     
-    sa_t_1, sa_t_2, r_t_1, r_t_2 = self._compat(first, second)
 
-    entropy, _ = self.get_entropy(sa_t_1, sa_t_2)
+    entropy, _ = self.get_entropy(first, second)
     
     topn = (-entropy).argsort()[:n]
     return first[topn], second[topn]
@@ -447,6 +453,13 @@ class RewardModel(Node):
       r_t.append(seg.reward)
     return np.stack(sa_t, axis=0), np.stack(r_t, axis=0)[..., np.newaxis]
 
+  def _stack(self, segments):
+    
+    def get(fn):
+      return [fn(s) for s in segments]
+    return (stack(get(lambda s: s.observation), axis=0),
+            stack(get(lambda s: s.action), axis=0))
+
   def store_feedbacks(self, first, second, labels):
     sa_t_1, sa_t_2, r_t_1, r_t_2 = self._compat(first, second)
     n = sa_t_1.shape[0]
@@ -545,8 +558,9 @@ class RewardModel(Node):
         first, second, y = (self._feedbacks_1[idxs],
                             self._feedbacks_2[idxs],
                             self._feedbacks_y[idxs])
-        sa_t_1, _ = self._unpack(first)
-        sa_t_2, _ = self._unpack(second)
+
+        observations_1, actions_1 = self._stack(first)
+        observations_2, actions_2 = self._stack(second)
         
         labels = th.from_numpy(y.flatten()).long().to(device)
         
@@ -554,8 +568,8 @@ class RewardModel(Node):
           total += labels.size(0)
         
         # get logits
-        r_hat1 = self._r[member](thu.torch(sa_t_1))
-        r_hat2 = self._r[member](thu.torch(sa_t_2))
+        r_hat1 = self._r_member(observations_1, actions_1, member) #self._r[member](thu.torch(sa_t_1))
+        r_hat2 = self._r_member(observations_2, actions_2, member) #self._r[member](thu.torch(sa_t_2))
         r_hat1 = r_hat1.sum(axis=1)
         r_hat2 = r_hat2.sum(axis=1)
         r_hat = th.cat([r_hat1, r_hat2], axis=-1)
@@ -605,8 +619,9 @@ class RewardModel(Node):
         first, second, y = (self._feedbacks_1[idxs],
                             self._feedbacks_2[idxs],
                             self._feedbacks_y[idxs])
-        sa_t_1, _ = self._unpack(first)
-        sa_t_2, _ = self._unpack(second)
+
+        observations_1, actions_1 = self._stack(first)
+        observations_2, actions_2 = self._stack(second)
 
         labels = th.from_numpy(y.flatten()).long().to(device)
         
@@ -614,8 +629,8 @@ class RewardModel(Node):
           total += labels.size(0)
         
         # get logits
-        r_hat1 = self._r[member](thu.torch(sa_t_1))
-        r_hat2 = self._r[member](thu.torch(sa_t_2))
+        r_hat1 = self._r_member(observations_1, actions_1, member) #self._r[member](thu.torch(sa_t_1))
+        r_hat2 = self._r_member(observations_2, actions_2, member) #self._r[member](thu.torch(sa_t_2))
         r_hat1 = r_hat1.sum(axis=1)
         r_hat2 = r_hat2.sum(axis=1)
         r_hat = th.cat([r_hat1, r_hat2], axis=-1)
