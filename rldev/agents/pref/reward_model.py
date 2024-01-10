@@ -311,12 +311,12 @@ class RewardModel(Node):
     u"""Random uniform pairs of segments with matching targets."""
 
     from rldev.utils.structure import chunk
-    clusters = self._compute_clusters(
+    labels, clusters = self._compute_clusters(
       self._episodes(), cluster, cluster_discard_outlier)
-  
+    
     pairs = []
-    for (_, cluster), k in zip(clusters, 
-                               chunk(n, len(clusters))):
+    for cluster, k in zip(clusters,
+                          chunk(n, len(labels))):
       pairs.append([
         *self._random_pairs(cluster, 
                             k, 
@@ -364,10 +364,10 @@ class RewardModel(Node):
 
   def _random_pairs(self, episodes, n, segment_length):
     u"""Sample `n` random pairs of segments."""
-    def segments():
-      return self._segment(episodes, size=segment_length)
-    return (self._sample(segments(), n), 
-            self._sample(segments(), n))
+    first, second = (self._segment(episodes, size=segment_length),
+                     self._segment(episodes, size=segment_length))
+    return (self._sample(first, n), 
+            self._sample(second, n))
 
   def _discover_targets(self, episodes):
     u"""Extranct targets from `episodes`."""
@@ -384,21 +384,14 @@ class RewardModel(Node):
                         cluster_discard_outlier):
     u"""Cluster `episodes` based on their desired goals."""
 
-    targets = self._discover_targets(episodes)
-    labels = cluster.fit(targets).labels_
-    if labels.ndim != 1:
-      raise AssertionError(f"{labels.ndim} != 1")
+    labels = cluster.fit(self._discover_targets(episodes)).labels_
+    unique_labels = set(labels)
+    if cluster_discard_outlier:
+      unique_labels.discard(-1)
 
-    index = np.argsort(labels)
-    unique, (_, *sections) = np.unique(labels[index],
-                                       return_index=True)
-    labels, clusters = (unique.tolist(),
-                        np.split(episodes[index], sections))
-    res = []
-    for label, cluster in zip(labels, clusters):
-      if not (cluster_discard_outlier and label == -1):
-        res.append((label, cluster))
-    return res
+    unique_labels = list(unique_labels)
+    return (unique_labels, list(episodes[labels == label] 
+                                for label in unique_labels))
 
   def _every_pairs(self, episodes):
     u"""Find every pairs of trajectories."""
@@ -414,12 +407,14 @@ class RewardModel(Node):
     u"""Find every pairs of trajectories with matching 
     desired goals."""
 
-    clusters = self._compute_clusters(
+    _, clusters = self._compute_clusters(
       episodes, cluster, cluster_discard_outlier)
 
-    pairs = np.array([
-      [*self._every_pairs(self._segment(cluster, length))] 
-        for _, cluster in clusters], dtype=object)
+    pairs = []
+    for cluster in clusters:
+      pairs.append([
+        *self._every_pairs(self._segment(cluster, length))])    
+    pairs = np.array(pairs, dtype=object)
     return (np.concatenate(pairs[:, 0], axis=0),
             np.concatenate(pairs[:, 1], axis=0))
 
