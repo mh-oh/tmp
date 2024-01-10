@@ -154,7 +154,8 @@ class Thunk(nn.Module):
                common_dims: List[int] = [256, 256, 256],
                common_activations: List[str] = ["leaky-relu", "leaky-relu", "tanh"],
                projection_dims: List[int] = [128, 128],
-               projection_activations: List[int] = ["tanh", "tanh"]):
+               projection_activations: List[int] = ["tanh", "tanh"],
+               output_activation: str = "identity"):
     super().__init__()
     self._common_body = (
       MLP(dims=[input_dim, *common_dims],
@@ -164,12 +165,16 @@ class Thunk(nn.Module):
                  activations=projection_activations).float().to(thu.device())
     self._psi = projection()
     self._phi = projection()
+
+    from rldev.utils.registry import get
+    self._output_activation = get(output_activation)()
   
   def forward(self, input):
     z = self._common_body(input)
     psi, phi = self._psi(z), self._phi(z)
-    return th.linalg.vector_norm(psi - phi, 
-                                 dim=-1, keepdim=True)
+    return self._output_activation(
+      th.linalg.vector_norm(psi - phi, 
+                            dim=-1, keepdim=True))
 
 
 class FusionDistanceL2(Base):
@@ -182,7 +187,8 @@ class FusionDistanceL2(Base):
                common_dims: List[int] = [256, 256, 256],
                common_activations: List[str] = ["leaky-relu", "leaky-relu", "tanh"],
                projection_dims: List[int] = [128, 128],
-               projection_activations: List[int] = ["tanh", "tanh"]):
+               projection_activations: List[int] = ["tanh", "tanh"],
+               output_activation: str = "identity"):
     super().__init__(observation_space, action_space)
 
     odim = observation_dim(observation_space)
@@ -193,7 +199,8 @@ class FusionDistanceL2(Base):
                    common_dims,
                    common_activations,
                    projection_dims,
-                   projection_activations)
+                   projection_activations,
+                   output_activation)
     self._body = Fusion([thunk for _ in range(fusion)])
 
   def predict(self, 

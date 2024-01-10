@@ -65,14 +65,11 @@ class _MLP(nn.Sequential):
     if not isinstance(activations, (list, tuple)):
       activations = itertools.repeat(activations, times=layers)
 
+    from rldev.utils.registry import get
     def map(x):
       if not isinstance(x, str):
         return x
-      return {"leaky-relu": nn.LeakyReLU,
-              "tanh": nn.Tanh,
-              "sigmoid": nn.Sigmoid,
-              "relu": nn.ReLU,
-              "identity": nn.Identity}[x]
+      return get(x)
     activations = [map(x) for x in activations]
 
     structure = []
