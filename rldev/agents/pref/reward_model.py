@@ -174,9 +174,8 @@ class RewardModel(Node):
                      {})
 
   def _r_member(self, observation, action, member):
-    observation = flatten_observation(self._observation_space,
-                                      observation)
-    return self._r[member](thu.torch(np.concatenate([observation, action], axis=-1)))
+    return self._r(thu.torch(observation),
+                   thu.torch(action), member=member)
 
   # def get_rank_probability(self, x_1, x_2):
   #   # get probability x_1 > x_2
@@ -223,9 +222,8 @@ class RewardModel(Node):
   def r_hat(self,
             observation: OrderedDict,
             action: np.ndarray):
-    observation = flatten_observation(
-      self._observation_space, observation)
-    return self._r(th.from_numpy(np.concatenate([observation, action], axis=-1)).float().to(device), reduce="mean")
+    return self._r(thu.torch(observation), 
+                   thu.torch(action), reduce="mean")
   
   @overrides
   def save(self, dir: Path):
