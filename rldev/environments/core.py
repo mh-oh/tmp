@@ -1,6 +1,7 @@
 
 
 import gymnasium
+from gymnasium.envs.mujoco.mujoco_env import DEFAULT_SIZE
 from abc import *
 
 
@@ -26,6 +27,16 @@ class Env(gymnasium.Env, metaclass=ABCMeta):
   def render_mode(self):
     return "rgb_array"
   
+  @property
+  @abstractmethod
+  def render_height(self):
+    raise NotImplementedError()
+
+  @property
+  @abstractmethod
+  def render_width(self):
+    raise NotImplementedError()
+
   @property
   @abstractmethod
   def observation_space(self):

@@ -3,10 +3,11 @@ import numpy as np
 
 from collections import deque
 from overrides import overrides
+from typing import *
 
 from gymnasium_robotics.envs.maze import point_maze
 
-from rldev.environments.core import Env
+from rldev.environments.core import Env, DEFAULT_SIZE
 from rldev.environments.maze.layout import *
 from rldev.environments.registry import register
 
@@ -58,8 +59,9 @@ class PointMaze(Env):
                    "path-distance-v1"]
 
   def __init__(self, 
-               layout,
-               reward_mode):
+               layout: List[List[Union[int, str]]],
+               reward_mode: str,
+               render_size: Tuple[int] = (DEFAULT_SIZE, DEFAULT_SIZE)):
     super().__init__()
     
     self._layout = layout
@@ -67,13 +69,16 @@ class PointMaze(Env):
     if reward_mode not in self._reward_modes:
       raise ValueError(
         f"'reward_mode' should be one of {self._reward_modes}")
+    self._render_height, self._render_width = (render_size)
 
     cls = point_maze.PointMazeEnv
     self._env = cls(maze_map=layout,
                     render_mode=self.render_mode,
                     reward_type="sparse",
                     continuing_task=True,
-                    reset_target=False)
+                    reset_target=False,
+                    height=self._render_height,
+                    width=self._render_width)
 
     self._init_object_position = None
     self._init_target_position = None
@@ -85,6 +90,16 @@ class PointMaze(Env):
   @property
   def maze(self):
     return self._env.maze
+
+  @property
+  @overrides
+  def render_height(self):
+    return self._render_height
+
+  @property
+  @overrides
+  def render_width(self):
+    return self._render_width
 
   @property
   @overrides
