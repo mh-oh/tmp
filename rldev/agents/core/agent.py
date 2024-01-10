@@ -102,10 +102,10 @@ class Agent(metaclass=ABCMeta):
       pickle.dump(self._training, fout)
 
   @abstractmethod
-  def load(self):
+  def load(self, dir: Path):
 
+    print("loading agent...")
     # Load registered nodes.
-    dir = self.save_dir
     for key, node in self._nodes.items():
       node.load(dir / key)
     
@@ -167,7 +167,7 @@ class OffPolicyAgent(Agent):
   
   @overrides
   @abstractmethod
-  def load(self): super().load()
+  def load(self, dir:Path): super().load(dir)
 
   @overrides
   def run(self, 

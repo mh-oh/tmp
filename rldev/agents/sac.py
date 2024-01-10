@@ -6,6 +6,7 @@ import torch as th
 from abc import *
 from collections import deque
 from overrides import overrides
+from pathlib import Path
 from typing import *
 
 from rldev.agents.pref import utils
@@ -80,7 +81,7 @@ class SAC(Agent):
   def save(self): super().save()
   
   @overrides
-  def load(self): super().load()
+  def load(self, dir: Path): super().load(dir)
 
   def run(self, test_episodes: int):
 

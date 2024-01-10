@@ -251,7 +251,19 @@ class RewardModel(Node):
 
   @overrides
   def load(self, dir: Path):
-    ...
+
+    print("loading reward model...")
+    self._r_optimizer = th.load(dir / "_r_optimizer.pt")
+    self._r = th.load(dir / "_r.pt")
+
+    # self._feedbacks_1 = np.load(dir / "_feedbacks_1.npy.nosync")
+    # self._feedbacks_2 = np.load(dir / "_feedbacks_2.npy.nosync")
+    # self._feedbacks_y = np.load(dir / "_feedbacks_y.npy.nosync")
+
+    with open(dir / "_cursor.pkl", "rb") as fin:
+      self._cursor = pickle.load(fin)
+    with open(dir / "_full.pkl", "rb") as fin:
+      self._full = pickle.load(fin)
   
   def get_train_acc(self):
     ensemble_acc = np.array([0 for _ in range(self._fusion)])

@@ -141,7 +141,7 @@ class DDPG(OffPolicyAgent):
   def save(self): super().save()
 
   @overrides
-  def load(self): super().load()
+  def load(self, dir: Path): super().load(dir)
 
   @overrides
   def process_episodic_records(self, done):

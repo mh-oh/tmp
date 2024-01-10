@@ -106,7 +106,9 @@ class DiagGaussianActor(nn.Module):
     th.save(self._pi.state_dict(), dir / "_pi.pt")
 
   def load(self, dir: Path):
-    ...
+    print("loading policy...")
+    self._optimizer.load_state_dict(th.load(dir / "_optimizer.pt"))
+    self._pi.load_state_dict(th.load(dir / "_pi.pt"))
 
   def forward(self, obs):
     mu, log_std = self._pi(obs).chunk(2, dim=-1)
@@ -176,7 +178,9 @@ class QFunction(nn.Module):
     th.save(self._qf_target.state_dict(), dir / "_qf_target.pt")
 
   def load(self, dir: Path):
-    ...
+    self._optimizer.load_state_dict(th.load(dir / "_optimizer.pt"))
+    self._qf.load_state_dict(th.load(dir / "_qf.pt"))
+    self._qf_target.load_state_dict(th.load(dir / "_qf_target.pt"))
 
   def forward(self, observation, action):
     return self._qf(observation, action)
@@ -309,7 +313,7 @@ class SACPolicy(Node):
     dist = self._pi(obs)
     action = dist.sample() if sample else dist.mean
     action = action.clamp(*self.action_range)
-    if not (action.ndim == 2):
+    if not (action.ndim == 2 or action.ndim == 1):
       raise AssertionError(f"{action.shape}, {__obs.shape}")
     return utils.to_np(action)
 
@@ -380,7 +384,9 @@ class SACPolicy(Node):
     self._qf.save(dir / "_qf")
 
   @overrides
-  def load(self, dir: Path): ...
+  def load(self, dir: Path):
+    self._pi.load(dir / "_pi")
+    self._qf.load(dir / "_qf")
   
   def update_actor_and_alpha(self, obs, logger, step, print_flag=False):
     dist = self._pi(obs)
