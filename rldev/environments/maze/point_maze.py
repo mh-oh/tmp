@@ -79,6 +79,14 @@ class PointMaze(Env):
     self._init_target_position = None
 
   @property
+  def layout(self):
+    return self._layout
+  
+  @property
+  def maze(self):
+    return self._env.maze
+
+  @property
   @overrides
   def observation_space(self):
     return self._env.observation_space
