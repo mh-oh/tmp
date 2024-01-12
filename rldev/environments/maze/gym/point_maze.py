@@ -12,7 +12,7 @@ This project is covered by the Apache 2.0 License.
 """
 
 from os import path
-from typing import Dict, List, Optional, Union, Sequence, Tuple
+from typing import Dict, List, Optional, Union, Sequence
 
 import numpy as np
 from gymnasium import spaces
@@ -27,29 +27,27 @@ from gymnasium_robotics.utils.mujoco_utils import MujocoModelNames
 
 class MazeEnv(maze_v4.MazeEnv):
   
-  def __init__(self, *args, target_distribution=None, **kwargs):
+  def __init__(self, *args, target_pvals=None, **kwargs):
     super().__init__(*args, **kwargs)
-    self._target_distribution = target_distribution
 
-    if target_distribution is not None:
-      pvals, coords = [], []
-      for (i, j), p in target_distribution:
-        if self.maze.maze_map[i][j] != GOAL:
-          raise ValueError(f"({i}, {j}) is not a target")
-        pvals.append(p); coords.append((i, j))
-      if sum(pvals) != 1.0:
+    self._target_pvals = target_pvals
+    if target_pvals is not None:
+      if sum(target_pvals) != 1.0:
         raise ValueError(f"probablities do not sum up to one")
       n_targets = len(self.maze.unique_goal_locations)
-      n = len(set(coords))
+      n = len(target_pvals)
       if n != n_targets:
-        raise ValueError(f"expected {n_targets} targets, but got {n}")
-
-      self._target_pvals = pvals
-      self._target_coords = np.array(coords, dtype=int)
+        raise ValueError(f"expected {n_targets} pvals, but got {n}")
+      targets = []
+      for i in range(self.maze.map_length):
+        for j in range(self.maze.map_width):
+          if self.maze.maze_map[i][j] == GOAL:
+            targets.append((i, j))
+      self._target_coords = np.array(targets, dtype=int)
 
   def generate_target_goal(self):
 
-    if self._target_distribution is None:
+    if self._target_pvals is None:
       return super().generate_target_goal()
     else:
       drawn = self.np_random.multinomial(1, self._target_pvals)
@@ -69,7 +67,7 @@ class PointMazeEnv(MazeEnv, EzPickle):
                reward_type: str = "sparse",
                continuing_task: bool = True,
                reset_target: bool = False,
-               target_distribution: Sequence[Tuple[Tuple[int, int], float]] = None,
+               target_pvals: Sequence[float] = None,
                **kwargs):
     point_xml_file_path = path.join(
       path.dirname(path.realpath(__file__)), "point.xml")
@@ -80,7 +78,7 @@ class PointMazeEnv(MazeEnv, EzPickle):
                      reward_type=reward_type,
                      continuing_task=continuing_task,
                      reset_target=reset_target,
-                     target_distribution=target_distribution,
+                     target_pvals=target_pvals,
                      **kwargs)
 
     maze_length = len(maze_map)

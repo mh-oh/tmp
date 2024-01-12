@@ -10,10 +10,11 @@ def get(name):
   except:
     raise KeyError(f"unknown layout '{name}'") from None
 
-def register(name, layout):
+def register(name, layout, target_pvals=None):
   if name in registry:
     raise KeyError(f"'{name}' conflicts")
-  registry[name] = layout
+  registry[name] = dict(layout=layout,
+                        target_pvals=target_pvals)
 
 
 register(
@@ -61,6 +62,17 @@ register(
    [1, G, 0, R, 0, 1, 0, 1],
    [1, 0, 0, 1, 0, 0, 0, 1],
    [1, 1, 1, 1, 1, 1, 1, 1]])
+
+register(
+  "medium-2-2-t28",
+  [[1, 1, 1, 1, 1, 1, 1, 1],
+   [1, 0, 0, 1, 0, 0, 0, 1],
+   [1, 0, 0, 1, 0, 1, G, 1],
+   [1, 1, 0, 0, 0, 0, 1, 1],
+   [1, 1, 1, 0, 1, 0, 0, 1],
+   [1, G, 0, R, 0, 1, 0, 1],
+   [1, 0, 0, 1, 0, 0, 0, 1],
+   [1, 1, 1, 1, 1, 1, 1, 1]], [0.2, 0.8])
 
 register(
   "medium-3-1",

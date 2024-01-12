@@ -60,7 +60,7 @@ class PointMaze(Env):
   def __init__(self, 
                layout: List[List[Union[int, str]]],
                reward_mode: str,
-               target_distribution: Sequence[Tuple[Tuple[int, int], float]] = None,
+               target_pvals: Sequence[float] = None,
                render_size: Tuple[int] = (DEFAULT_SIZE, DEFAULT_SIZE)):
     super().__init__()
     
@@ -77,7 +77,7 @@ class PointMaze(Env):
                     reward_type="sparse",
                     continuing_task=True,
                     reset_target=False,
-                    target_distribution=target_distribution,
+                    target_pvals=target_pvals,
                     height=self._render_height,
                     width=self._render_width)
 
@@ -197,10 +197,11 @@ from rldev.environments.maze.layout import registry as layouts
 variants = product(layouts.items(), 
                    PointMaze._reward_modes)
 for variant in variants:
-  (layout_key, layout), reward_mode = variant
+  (layout_key, kwargs), reward_mode = variant
   register(f"point-maze/{layout_key}-{reward_mode}",
            f"rldev.environments.maze.point_maze:PointMaze",
            max_episode_steps=300,
-           kwargs={"layout": layout,
+           kwargs={"layout": kwargs["layout"],
+                   "target_pvals": kwargs["target_pvals"],
                    "reward_mode": reward_mode})
 
