@@ -15,7 +15,7 @@ def main():
   if args.test_env is None:
     args.test_env = args.env
   
-  from rldev.configs.registry import get
+  from rldev.configs import get
   conf = push_args(get(args.conf), args)
   import subprocess, sys
   conf.cmd = sys.argv[0] + " " + subprocess.list2cmdline(sys.argv[1:])

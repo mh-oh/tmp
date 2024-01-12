@@ -6,25 +6,11 @@ from rldev.agents.pref.sac import SACPolicy
 from rldev.agents.pref.reward_model import RewardModel
 from rldev.agents.pebble import PEBBLE
 from rldev.agents.pref import utils
-from rldev.launcher import parse_args, push_args
+from rldev.launcher import configure
 
 
-# @configure("rldev.experiments")
-def main():
-
-  args = parse_args()
-  if args.test_env is None:
-    args.test_env = args.env
-  
-  from rldev.configs.registry import get
-  conf = push_args(get(args.conf), args)
-  import subprocess, sys
-  conf.cmd = sys.argv[0] + " " + subprocess.list2cmdline(sys.argv[1:])
-
-  wandb.init(project="experiments",
-             tags=conf.tag,
-             entity="rldev",
-             config=conf)
+@configure
+def main(conf):
 
   utils.set_seed_everywhere(conf.seed)
 
@@ -41,14 +27,14 @@ def main():
         except:
           return self.envs[0].max_episode_steps
 
-  def env_fn(name, seed, **kwargs):
+  def env_fn(name, seed):
     from rldev.environments import make
     def thunk():
-      env = make(name, **kwargs); env.seed(seed); return env
+      env = make(name); env.seed(seed); return env
     return thunk
 
-  env = DummyVecEnv([env_fn(conf.env, conf.seed, **conf.env_kwargs)])
-  test_env = DummyVecEnv([env_fn(conf.test_env, conf.seed + 1234, **conf.test_env_kwargs)])
+  env = DummyVecEnv([env_fn(conf.env, conf.seed)])
+  test_env = DummyVecEnv([env_fn(conf.test_env, conf.seed + 1234)])
 
   buffer = (
     lambda agent:

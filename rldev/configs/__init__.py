@@ -1,6 +1,7 @@
 
 from rldev.configs.config import *
 from rldev.configs.continuous_off_policy import *
+from rldev.configs.registry import get, list_configs
 
 """
 from munch import AutoMunch, Munch, munchify
