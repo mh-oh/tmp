@@ -59,7 +59,7 @@ conf.segment = 10000
 conf.query.starter_mode = "uniform_aligned"
 conf.query.starter_kwargs = dict(cluster=KMeans(n_clusters=1))
 conf.query.mode = "entropy_aligned"
-conf.query.kwargs = dict(cluster=KMeans(n_clusters=2))
+conf.query.kwargs = dict(cluster=KMeans(n_clusters=1))
 conf.r.cls = "FusionDistanceL2"
 register("entropy-kmeans-1-traj-distance", conf)
 
@@ -68,7 +68,7 @@ conf.segment = 10000
 conf.query.starter_mode = "uniform_aligned"
 conf.query.starter_kwargs = dict(cluster=KMeans(n_clusters=1))
 conf.query.mode = "entropy_aligned"
-conf.query.kwargs = dict(cluster=KMeans(n_clusters=2))
+conf.query.kwargs = dict(cluster=KMeans(n_clusters=1))
 conf.r.cls = "FusionDistanceL2"
 conf.r.kwargs = dict(output_activation="tanh")
 register("entropy-kmeans-1-traj-distance-tanh", conf)

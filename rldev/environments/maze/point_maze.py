@@ -5,10 +5,9 @@ from collections import deque
 from overrides import overrides
 from typing import *
 
-from gymnasium_robotics.envs.maze import point_maze
-
 from rldev.environments.core import Env, DEFAULT_SIZE
 from rldev.environments.maze.layout import *
+from rldev.environments.maze.gym import point_maze
 from rldev.environments.registry import register
 
 
@@ -61,6 +60,7 @@ class PointMaze(Env):
   def __init__(self, 
                layout: List[List[Union[int, str]]],
                reward_mode: str,
+               target_distribution: Sequence[Tuple[Tuple[int, int], float]] = None,
                render_size: Tuple[int] = (DEFAULT_SIZE, DEFAULT_SIZE)):
     super().__init__()
     
@@ -77,6 +77,7 @@ class PointMaze(Env):
                     reward_type="sparse",
                     continuing_task=True,
                     reset_target=False,
+                    target_distribution=target_distribution,
                     height=self._render_height,
                     width=self._render_width)
 

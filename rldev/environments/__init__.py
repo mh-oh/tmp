@@ -2,13 +2,13 @@
 from rldev.environments.maze import point_maze
 from rldev.environments.registry import list_envs
 
-def make(name):
+def make(name, **kwargs):
   import gymnasium
   import wandb
   from rldev.environments.wrappers import GymApi
   from gymnasium.wrappers.record_video import RecordVideo
   
-  env = gymnasium.make(name)
+  env = gymnasium.make(name, **kwargs)
   # env = RecordVideo(env, video_folder=f"{wandb.run.dir}/videos")
   return GymApi(env)
 

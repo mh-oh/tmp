@@ -41,14 +41,14 @@ def main():
         except:
           return self.envs[0].max_episode_steps
 
-  def env_fn(name, seed):
+  def env_fn(name, seed, **kwargs):
     from rldev.environments import make
     def thunk():
-      env = make(name); env.seed(seed); return env
+      env = make(name, **kwargs); env.seed(seed); return env
     return thunk
 
-  env = DummyVecEnv([env_fn(conf.env, conf.seed)])
-  test_env = DummyVecEnv([env_fn(conf.test_env, conf.seed + 1234)])
+  env = DummyVecEnv([env_fn(conf.env, conf.seed, **conf.env_kwargs)])
+  test_env = DummyVecEnv([env_fn(conf.test_env, conf.seed + 1234, **conf.test_env_kwargs)])
 
   buffer = (
     lambda agent:

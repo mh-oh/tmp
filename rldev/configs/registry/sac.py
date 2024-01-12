@@ -1,10 +1,15 @@
 
 from rldev.agents.pref.sac import DiagGaussianActor, QFunction
-from rldev.configs.xconf import Conf
+from rldev.configs.xconf import Conf, Required
 from rldev.configs.registry.registry import register
 
 
 conf = Conf()
+
+conf.env = Required(str)
+conf.env_kwargs = dict()
+conf.test_env = Required(str)
+conf.test_env_kwargs = dict()
 
 conf.num_seed_steps = 1000
 conf.reset_update = 100
