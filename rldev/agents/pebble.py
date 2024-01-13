@@ -68,7 +68,7 @@ class PEBBLE(PbRLAgent):
       self._interact_count = 0
     if self._step > self.config.num_seed_steps + self.config.num_unsup_steps:
       # update reward function
-      if ((self._feedbacks < self.config.max_feedback) and
+      if ((self._feedbacks < self.config.max_feedbacks) and
           (self._interact_count % self.config.num_interact == 0)):
         self._reward_model.change_batch(frac(self._step))
         
@@ -78,8 +78,8 @@ class PEBBLE(PbRLAgent):
         self._reward_model.set_teacher_thres_equal(new_margin * self.config.teacher_eps_equal)
         
         # corner case: new total feed > max feed
-        if self._reward_model._effective_budget + self._feedbacks > self.config.max_feedback:
-          self._reward_model.set_batch(self.config.max_feedback - self._feedbacks)
+        if self._reward_model._effective_budget + self._feedbacks > self.config.max_feedbacks:
+          self._reward_model.set_batch(self.config.max_feedbacks - self._feedbacks)
             
         self.learn_reward()
         self._buffer.relabel_rewards(self._reward_model)
