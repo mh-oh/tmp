@@ -65,7 +65,7 @@ class AddNoise(gymnasium.ObservationWrapper):
     return observation
 
 
-class RGB(gymnasium.ObservationWrapper):
+class Pixel(gymnasium.ObservationWrapper):
   
   def __init__(self, env: Env):
     super().__init__(env)
