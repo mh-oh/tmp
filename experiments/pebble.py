@@ -68,6 +68,7 @@ def main(conf):
                   env.observation_space,
                   env.action_space,
                   env._max_episode_steps,
+                  conf.max_feedbacks,
                   conf.r.fusion,
                   conf.r.cls,
                   conf.r.kwargs,

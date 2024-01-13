@@ -84,6 +84,7 @@ class RewardModel(Node):
                observation_space: spaces.Dict, 
                action_space: spaces.Box, 
                max_episode_steps: int,
+               max_feedbacks: int,  
                r_fusion: int,
                r_cls: type,
                r_kwargs: Dict[str, Any],
@@ -92,7 +93,6 @@ class RewardModel(Node):
                budget: int = 128, 
                segment_length: int = 1, 
                max_episodes: int = 100, 
-               capacity: int = int(5e5),  
                label_margin=0.0, 
                teacher_beta=-1, 
                teacher_gamma=1, 
@@ -100,9 +100,6 @@ class RewardModel(Node):
                teacher_eps_skip=0, 
                teacher_eps_equal=0):
     super().__init__(agent)
-
-    odim = observation_dim(observation_space)
-    adim = action_dim(action_space)
 
     self._observation_space = observation_space
     self._action_space = action_space
@@ -114,13 +111,13 @@ class RewardModel(Node):
     self._budget = budget
     self._effective_budget = budget
 
-    self._capacity = capacity
+    self._capacity = max_feedbacks
     self._cursor = 0
     self._full = False
 
-    self._feedbacks_1 = np.empty((capacity,), dtype=object)
-    self._feedbacks_2 = np.empty((capacity,), dtype=object)
-    self._feedbacks_y = np.empty((capacity, 1), dtype=np.float32)
+    self._feedbacks_1 = np.empty((max_feedbacks,), dtype=object)
+    self._feedbacks_2 = np.empty((max_feedbacks,), dtype=object)
+    self._feedbacks_y = np.empty((max_feedbacks, 1), dtype=np.float32)
     
     r_cls = {"FusionMLP": FusionMLP,
              "FusionDistanceL2": FusionDistanceL2}[r_cls]
@@ -233,8 +230,8 @@ class RewardModel(Node):
   def save(self, dir: Path):
     dir.mkdir(parents=True, exist_ok=True)
     
-    th.save(self._r_optimizer, dir / "_r_optimizer.pt")
-    th.save(self._r, dir / "_r.pt")
+    th.save(self._r_optimizer.state_dict(), dir / "_r_optimizer.pt")
+    th.save(self._r.state_dict(), dir / "_r.pt")
 
     def save_nosync(file, obj):
       with open(dir / f"{file}.npy.nosync", "wb") as fout:
@@ -253,8 +250,8 @@ class RewardModel(Node):
   def load(self, dir: Path):
 
     print("loading reward model...")
-    self._r_optimizer = th.load(dir / "_r_optimizer.pt")
-    self._r = th.load(dir / "_r.pt")
+    self._r_optimizer.load_state_dict(th.load(dir / "_r_optimizer.pt"))
+    self._r.load_state_dict(th.load(dir / "_r.pt"))
 
     # self._feedbacks_1 = np.load(dir / "_feedbacks_1.npy.nosync")
     # self._feedbacks_2 = np.load(dir / "_feedbacks_2.npy.nosync")
