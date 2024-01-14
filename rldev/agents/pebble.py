@@ -126,7 +126,7 @@ class PEBBLE(PbRLAgent):
         if self.config.label_margin > 0 or self.config.teacher_eps_equal > 0:
           train_acc = self._reward_model.train_soft_reward()
         else:
-          train_acc = self._reward_model.train_reward()
+          train_acc = self._reward_model.train()
         total_acc = np.mean(train_acc)
         
         if total_acc > 0.97:

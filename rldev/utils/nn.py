@@ -93,8 +93,8 @@ class Fusion(nn.Module):
   def n_estimators(self):
     return len(self.body)
 
-  def forward(self, input, reduce=True):
-    output = [fn(input) for fn in self.body]
+  def forward(self, *inputs, reduce=True):
+    output = [fn(*inputs) for fn in self.body]
     if not reduce:
       return output
     else:

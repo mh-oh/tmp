@@ -139,9 +139,13 @@ class RewardModel(Node):
     self._buffer = (
       EpisodicDictBuffer(agent,
                          agent._env.num_envs,
-                         (max_episodes + 1) * max_episode_steps,
+                         max_episode_steps * (max_episodes + 1),
                          observation_space,
                          action_space))
+
+  @property
+  def n_feedbacks(self):
+    return self._capacity if self._full else self._cursor
 
   def softXEnt_loss(self, input, target):
     logprobs = th.nn.functional.log_softmax (input, dim = 1)
@@ -264,15 +268,15 @@ class RewardModel(Node):
   
   def get_train_acc(self):
     ensemble_acc = np.array([0 for _ in range(self._fusion)])
-    max_len = self._capacity if self._full else self._cursor
+    n_feedbacks = self._capacity if self._full else self._cursor
     batch_size = 256
-    num_epochs = int(np.ceil(max_len/batch_size))
+    num_epochs = int(np.ceil(n_feedbacks/batch_size))
     
     total = 0
     for epoch in range(num_epochs):
       last_index = (epoch+1)*batch_size
-      if (epoch+1)*batch_size > max_len:
-        last_index = max_len
+      if (epoch+1)*batch_size > n_feedbacks:
+        last_index = n_feedbacks
 
       first, second, y = (self._feedbacks_1[epoch*batch_size:last_index],
                           self._feedbacks_2[epoch*batch_size:last_index],
@@ -285,8 +289,8 @@ class RewardModel(Node):
       total += labels.size(0)
       for member in range(self._fusion):
         # get logits
-        r_hat1 = self._r_member(observations_1, actions_1, member) #self._r[member](thu.torch(sa_t_1))
-        r_hat2 = self._r_member(observations_2, actions_2, member) #self._r[member](thu.torch(sa_t_2))
+        r_hat1 = self._r_member(observations_1, actions_1, member)
+        r_hat2 = self._r_member(observations_2, actions_2, member)
         r_hat1 = r_hat1.sum(axis=1)
         r_hat2 = r_hat2.sum(axis=1)
         r_hat = th.cat([r_hat1, r_hat2], axis=-1)                
@@ -439,13 +443,6 @@ class RewardModel(Node):
     return np.array([get(episode) 
                      for episode in episodes], dtype=object)
 
-  def _compat(self, first, second):
-
-    sa_t_1, r_t_1 = self._unpack(first)
-    sa_t_2, r_t_2 = self._unpack(second)
-
-    return sa_t_1, sa_t_2, r_t_1, r_t_2
-
   def _unpack(self, segments):
 
     def fn(observation):
@@ -467,9 +464,8 @@ class RewardModel(Node):
             stack(get(lambda s: s.action), axis=0))
 
   def store_feedbacks(self, first, second, labels):
-    sa_t_1, sa_t_2, r_t_1, r_t_2 = self._compat(first, second)
-    n = sa_t_1.shape[0]
 
+    n = len(labels)
     cursor = self._cursor
     index = np.arange(cursor, cursor + n) % self._capacity
     self._feedbacks_1[index] = copy.deepcopy(first)
@@ -481,7 +477,9 @@ class RewardModel(Node):
       self._full = True
 
   def answer(self, first, second):
-    sa_t_1, sa_t_2, r_t_1, r_t_2 = self._compat(first, second)
+
+    sa_t_1, r_t_1 = self._unpack(first)
+    sa_t_2, r_t_2 = self._unpack(second)
 
     assert len(sa_t_1) == self._effective_budget
     sum_r_t_1 = np.sum(r_t_1, axis=1)
@@ -537,16 +535,17 @@ class RewardModel(Node):
     
     return first, second, labels
 
-  def train_reward(self):
+  def train(self, 
+            loss_fn: nn.Module = nn.CrossEntropyLoss()):
     ensemble_losses = [[] for _ in range(self._fusion)]
     ensemble_acc = np.array([0 for _ in range(self._fusion)])
     
-    max_len = self._capacity if self._full else self._cursor
+    n_feedbacks = self.n_feedbacks
     total_batch_index = []
     for _ in range(self._fusion):
-      total_batch_index.append(np.random.permutation(max_len))
+      total_batch_index.append(np.random.permutation(n_feedbacks))
     
-    num_epochs = int(np.ceil(max_len/self._batch_size))
+    num_epochs = int(np.ceil(n_feedbacks/self._batch_size))
     total = 0
     
     for epoch in range(num_epochs):
@@ -554,8 +553,8 @@ class RewardModel(Node):
       loss = 0.0
       
       last_index = (epoch+1)*self._batch_size
-      if last_index > max_len:
-          last_index = max_len
+      if last_index > n_feedbacks:
+          last_index = n_feedbacks
           
       for member in range(self._fusion):
           
@@ -574,14 +573,14 @@ class RewardModel(Node):
           total += labels.size(0)
         
         # get logits
-        r_hat1 = self._r_member(observations_1, actions_1, member) #self._r[member](thu.torch(sa_t_1))
-        r_hat2 = self._r_member(observations_2, actions_2, member) #self._r[member](thu.torch(sa_t_2))
+        r_hat1 = self._r_member(observations_1, actions_1, member)
+        r_hat2 = self._r_member(observations_2, actions_2, member)
         r_hat1 = r_hat1.sum(axis=1)
         r_hat2 = r_hat2.sum(axis=1)
         r_hat = th.cat([r_hat1, r_hat2], axis=-1)
 
         # compute loss
-        curr_loss = nn.CrossEntropyLoss()(r_hat, labels)
+        curr_loss = loss_fn(r_hat, labels)
         loss += curr_loss
         ensemble_losses[member].append(curr_loss.item())
         
@@ -596,18 +595,18 @@ class RewardModel(Node):
     ensemble_acc = ensemble_acc / total
     
     return ensemble_acc
-  
+
   def train_soft_reward(self):
+    raise
     ensemble_losses = [[] for _ in range(self._fusion)]
     ensemble_acc = np.array([0 for _ in range(self._fusion)])
     
-    max_len = self._capacity if self._full else self._cursor
+    n_feedbacks = self.n_feedbacks
     total_batch_index = []
     for _ in range(self._fusion):
-      total_batch_index.append(np.random.permutation(max_len))
+      total_batch_index.append(np.random.permutation(n_feedbacks))
     
-    num_epochs = int(np.ceil(max_len/self._batch_size))
-    list_debug_loss1, list_debug_loss2 = [], []
+    num_epochs = int(np.ceil(n_feedbacks/self._batch_size))
     total = 0
     
     for epoch in range(num_epochs):
@@ -615,8 +614,8 @@ class RewardModel(Node):
       loss = 0.0
       
       last_index = (epoch+1)*self._batch_size
-      if last_index > max_len:
-        last_index = max_len
+      if last_index > n_feedbacks:
+        last_index = n_feedbacks
           
       for member in range(self._fusion):
           
@@ -635,8 +634,8 @@ class RewardModel(Node):
           total += labels.size(0)
         
         # get logits
-        r_hat1 = self._r_member(observations_1, actions_1, member) #self._r[member](thu.torch(sa_t_1))
-        r_hat2 = self._r_member(observations_2, actions_2, member) #self._r[member](thu.torch(sa_t_2))
+        r_hat1 = self._r_member(observations_1, actions_1, member)
+        r_hat2 = self._r_member(observations_2, actions_2, member)
         r_hat1 = r_hat1.sum(axis=1)
         r_hat2 = r_hat2.sum(axis=1)
         r_hat = th.cat([r_hat1, r_hat2], axis=-1)

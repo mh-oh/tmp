@@ -48,6 +48,36 @@ class Base(nn.Module):
                         **kwargs)
 
 
+class _MLP(Base):
+
+  DEFAULT_DIMS = [256, 256, 256]
+  DEFAULT_ACTIVATIONS = ["leaky-relu", 
+                         "leaky-relu", 
+                         "leaky-relu", 
+                         "tanh"]
+
+  def __init__(self,
+               observation_space: Union[spaces.Dict, spaces.Box],
+               action_space: spaces.Box,
+               dims: List[int] = DEFAULT_DIMS,
+               activations: List[str] = DEFAULT_ACTIVATIONS):
+    super().__init__(observation_space, action_space)
+
+    odim = observation_dim(observation_space)
+    adim = action_dim(action_space)
+    self._body = (
+      MLP(dims=[odim + adim, *dims, 1],
+           activations=activations).float().to(thu.device()))
+
+  def predict(self, 
+              observation: OrderedDict, 
+              action: th.Tensor):
+    observation = (
+      flatten_observation(self._observation_space, 
+                          observation))
+    return self._body(th.cat([observation, action], dim=-1))
+
+
 class FusionMLP(Base):
 
   DEFAULT_DIMS = [256, 256, 256]
@@ -63,12 +93,11 @@ class FusionMLP(Base):
                dims: List[int] = DEFAULT_DIMS,
                activations: List[str] = DEFAULT_ACTIVATIONS):
     super().__init__(observation_space, action_space)
-
-    odim = observation_dim(observation_space)
-    adim = action_dim(action_space)
     def thunk():
-      return MLP(dims=[odim + adim, *dims, 1],
-                 activations=activations).float().to(thu.device())
+      return _MLP(observation_space,
+                  action_space,
+                  dims=dims, 
+                  activations=activations)
     self._body = Fusion([thunk for _ in range(fusion)])
 
   def predict(self, 
@@ -77,17 +106,13 @@ class FusionMLP(Base):
               *, 
               member: int = -1, 
               reduce: str = "mean"):
-    observation = (
-      flatten_observation(self._observation_space, 
-                          observation))
-    input = th.cat([observation, action], dim=-1)
     if member != -1:
-      return self._body[member](input)
+      return self._body[member](observation, action)
     else:
-      return self._body(input, reduce=reduce)
+      return self._body(observation, action, reduce=reduce)
 
 
-class TrueDistanceMLP(Base):
+class TrueDistance(Base):
 
   def __init__(self,
                observation_space: Union[spaces.Dict, spaces.Box],
@@ -147,18 +172,25 @@ class DistanceL2(Base):
     return th.linalg.vector_norm(psi - phi, 
                                  dim=-1, keepdim=True)
 
-class Thunk(nn.Module):
+
+class DistanceL2(Base):
 
   def __init__(self,
-               input_dim,
+               observation_space,
+               action_space,
+               *,
                common_dims: List[int] = [256, 256, 256],
                common_activations: List[str] = ["leaky-relu", "leaky-relu", "tanh"],
-               projection_dims: List[int] = [128, 128],
+               projection_dims: List[int] = [128, 2],
                projection_activations: List[int] = ["tanh", "tanh"],
                output_activation: str = "identity"):
-    super().__init__()
+    super().__init__(observation_space, action_space)
+
+    odim = observation_dim(observation_space)
+    adim = action_dim(action_space)
+
     self._common_body = (
-      MLP(dims=[input_dim, *common_dims],
+      MLP(dims=[odim + adim, *common_dims],
           activations=common_activations).float().to(thu.device()))
     def projection():
       return MLP(dims=[common_dims[-1], *projection_dims],
@@ -169,8 +201,11 @@ class Thunk(nn.Module):
     from rldev.utils.registry import get
     self._output_activation = get(output_activation)()
   
-  def forward(self, input):
-    z = self._common_body(input)
+  def predict(self, observation, action):
+    observation = (
+      flatten_observation(self._observation_space, 
+                          observation))
+    z = self._common_body(th.cat([observation, action], dim=-1))
     psi, phi = self._psi(z), self._phi(z)
     return self._output_activation(
       th.linalg.vector_norm(psi - phi, 
@@ -186,21 +221,18 @@ class FusionDistanceL2(Base):
                fusion: int = 3,
                common_dims: List[int] = [256, 256, 256],
                common_activations: List[str] = ["leaky-relu", "leaky-relu", "tanh"],
-               projection_dims: List[int] = [128, 128],
+               projection_dims: List[int] = [128, 2],
                projection_activations: List[int] = ["tanh", "tanh"],
                output_activation: str = "identity"):
     super().__init__(observation_space, action_space)
-
-    odim = observation_dim(observation_space)
-    adim = action_dim(action_space)
-
     def thunk():
-      return Thunk(odim + adim,
-                   common_dims,
-                   common_activations,
-                   projection_dims,
-                   projection_activations,
-                   output_activation)
+      return DistanceL2(observation_space,
+                        action_space,
+                        common_dims=common_dims,
+                        common_activations=common_activations,
+                        projection_dims=projection_dims,
+                        projection_activations=projection_activations,
+                        output_activation=output_activation)
     self._body = Fusion([thunk for _ in range(fusion)])
 
   def predict(self, 
@@ -209,11 +241,7 @@ class FusionDistanceL2(Base):
               *, 
               member: int = -1, 
               reduce: str = "mean"):
-    observation = (
-      flatten_observation(self._observation_space, 
-                          observation))
-    input = th.cat([observation, action], dim=-1)
     if member != -1:
-      return self._body[member](input)
+      return self._body[member](observation, action)
     else:
-      return self._body(input, reduce=reduce)
+      return self._body(observation, action, reduce=reduce)
