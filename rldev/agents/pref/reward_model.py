@@ -20,7 +20,7 @@ from rldev.agents.pref.models import FusionMLP, FusionDistanceL2
 from rldev.buffers.basic import EpisodicDictBuffer
 from rldev.utils import torch as thu
 from rldev.utils.env import *
-from rldev.utils.structure import stack
+from rldev.utils.structure import stack, pairwise
 
 
 device = 'cuda'
@@ -535,8 +535,73 @@ class RewardModel(Node):
     
     return first, second, labels
 
-  def train(self, 
-            loss_fn: nn.Module = nn.CrossEntropyLoss()):
+  def _compute_loss(self, member, first, second, y):
+
+    observations_1, actions_1 = self._stack(first)
+    observations_2, actions_2 = self._stack(second)
+    
+    y = th.from_numpy(y.flatten()).long().to(device)
+
+    r_hat1 = self._r_member(observations_1, actions_1, member)
+    r_hat2 = self._r_member(observations_2, actions_2, member)
+    r_hat1 = r_hat1.sum(axis=1)
+    r_hat2 = r_hat2.sum(axis=1)
+    r_hat = th.cat([r_hat1, r_hat2], axis=-1)
+
+    loss = nn.CrossEntropyLoss()(r_hat, y)
+
+    _, predicted = th.max(r_hat.data, 1)
+    correct = (predicted == y).sum().item()
+
+    return loss, correct
+
+  def _compute_constrained_loss(self, 
+                                member,
+                                first, second, y,
+                                coeff: float = 0.01,
+                                eps: float = 0.001,
+                                mode: str = "pairwise",
+                                frac: float = None):
+    
+    loss, correct = self._compute_loss(member, first, second, y)
+
+    def psi(observation, action):
+      observation = (
+        flatten_observation(self._observation_space,
+                            observation))
+      common = self._r._body[member]._common_body
+      psi = self._r._body[member]._psi
+      return psi(common(th.cat([observation, action], dim=-1)))
+
+    def compute(z):
+      
+      if mode == "pairwise":
+        index = list(pairwise(range(len(z))))
+      elif mode == "combinations":
+        index = list(combinations(range(len(z)), 2))
+      else:
+        raise ValueError(f"unknown mode '{mode}'")
+      
+      index = np.array(index)
+      if frac is not None:
+        n = int(len(index) * frac)
+        index = np.random.permutation(index)[:n]
+      
+      return (nn.Softplus()(
+        th.linalg.vector_norm(z[index[:, 0]] - 
+                              z[index[:, 1]], dim=-1) - eps) ** 2).sum()
+
+    def penalty():
+      constraints = []
+      for episode in self._episodes():
+        z = psi(thu.torch(episode.observation),
+                thu.torch(episode.action))
+        constraints.append(compute(z))
+      return th.mean(th.stack(constraints))
+    
+    return loss + coeff * penalty(), correct
+
+  def train(self):
     ensemble_losses = [[] for _ in range(self._fusion)]
     ensemble_acc = np.array([0 for _ in range(self._fusion)])
     
@@ -563,31 +628,13 @@ class RewardModel(Node):
         first, second, y = (self._feedbacks_1[idxs],
                             self._feedbacks_2[idxs],
                             self._feedbacks_y[idxs])
-
-        observations_1, actions_1 = self._stack(first)
-        observations_2, actions_2 = self._stack(second)
-        
-        labels = th.from_numpy(y.flatten()).long().to(device)
-        
-        if member == 0:
-          total += labels.size(0)
-        
-        # get logits
-        r_hat1 = self._r_member(observations_1, actions_1, member)
-        r_hat2 = self._r_member(observations_2, actions_2, member)
-        r_hat1 = r_hat1.sum(axis=1)
-        r_hat2 = r_hat2.sum(axis=1)
-        r_hat = th.cat([r_hat1, r_hat2], axis=-1)
-
-        # compute loss
-        curr_loss = loss_fn(r_hat, labels)
+        curr_loss, correct = self._compute_constrained_loss(member, first, second, y)
         loss += curr_loss
         ensemble_losses[member].append(curr_loss.item())
-        
-        # compute acc
-        _, predicted = th.max(r_hat.data, 1)
-        correct = (predicted == labels).sum().item()
         ensemble_acc[member] += correct
+
+        if member == 0:
+          total += len(y)
           
       loss.backward()
       self._r_optimizer.step()
