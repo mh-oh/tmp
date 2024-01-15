@@ -47,9 +47,11 @@ def parse_overrides(conf, commands):
 
   def parse_cmd(cmd):
     key, x = map(str.strip, cmd.split("=", maxsplit=1))
-    print(f"{key}, {x}, {type(x)}")
-    return key, yaml.safe_load(x)
+    x = yaml.safe_load(x)
+    print(f"- {key} : {type(x)} = {x}")
+    return key, x
   
+  print(f"Override configuration:")
   for cmd in commands:
     override(conf, *parse_cmd(cmd))
 

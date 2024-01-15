@@ -124,9 +124,10 @@ class PEBBLE(PbRLAgent):
       # update reward
       for epoch in range(self.config.reward_update):
         if self.config.label_margin > 0 or self.config.teacher_eps_equal > 0:
+          raise
           train_acc = self._reward_model.train_soft_reward()
         else:
-          train_acc = self._reward_model.train()
+          train_acc = self._reward_model.train(self._step, **conf.train_kwargs)
         total_acc = np.mean(train_acc)
         
         if total_acc > 0.97:

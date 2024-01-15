@@ -4,7 +4,7 @@ import click
 import wandb
 
 from tabulate import tabulate
-from rldev.configs import get
+from rldev.configs import get, parse_overrides
 
 
 # def push_args(conf, args):
@@ -135,6 +135,8 @@ def configure(fun):
     conf["test_env"] = kwargs["test_env"]
     conf["num_envs"] = kwargs["num_envs"]
     conf["epoch_steps"] = kwargs["epoch_steps"]
+
+    parse_overrides(conf, kwargs["overrides"])
 
     import subprocess, sys
     conf["cmd"] = (sys.argv[0] 

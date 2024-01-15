@@ -23,21 +23,20 @@ class DummyLogger(Node):
 
   def __init__(self, agent):
     super().__init__(agent)
-    self._metrics = set()
+    self._metrics = {}
 
-  def define(self, *metrics):
+  def define(self, *metrics, step_metric="train/step"):
 
-    if not self._metrics:
-      wandb.define_metric("train/step")
     for key in metrics:
+      self._metrics[key] = step_metric
       wandb.define_metric(
-        key, step_metric="train/step")
-    self._metrics.update(metrics)
+        key, step_metric=step_metric)
 
   def log(self, key, x, step):
-    if key not in self._metrics:
+    metrics = self._metrics
+    if key not in metrics:
       raise ValueError(f"unknown metric '{key}'")
-    wandb.log({key: x, "train/step": step})
+    wandb.log({key: x, metrics[key]: step})
 
   def dump(self, *args, **kwargs):
     ...

@@ -101,6 +101,12 @@ class RewardModel(Node):
                teacher_eps_equal=0):
     super().__init__(agent)
 
+    logger = self.agent.logger
+    for member in range(r_fusion):
+      logger.define(f"train/reward/epoch")
+      logger.define(f"train/reward/{member}/loss", step_metric="train/reward/epoch")
+      logger.define(f"train/reward/{member}/penalty", step_metric="train/reward/epoch")
+
     self._observation_space = observation_space
     self._action_space = action_space
 
@@ -124,6 +130,7 @@ class RewardModel(Node):
     self._r = r_cls(observation_space, action_space, fusion=r_fusion, **r_kwargs)
     self._r_optimizer = th.optim.Adam(self._r.parameters(), lr=lr)
     print(self._r)
+    self._last_epochs = 0
 
     self._teacher_beta = teacher_beta
     self._teacher_gamma = teacher_gamma
@@ -555,15 +562,12 @@ class RewardModel(Node):
 
     return loss, correct
 
-  def _compute_constrained_loss(self, 
-                                member,
-                                first, second, y,
-                                coeff: float = 0.01,
-                                eps: float = 0.001,
-                                mode: str = "pairwise",
-                                frac: float = None):
-    
-    loss, correct = self._compute_loss(member, first, second, y)
+  def _penalty(self,
+               member,
+               coeff: float = 0.01,
+               eps: float = 0.001,
+               mode: str = "pairwise",
+               frac: float = None):
 
     def psi(observation, action):
       observation = (
@@ -599,9 +603,20 @@ class RewardModel(Node):
         constraints.append(compute(z))
       return th.mean(th.stack(constraints))
     
-    return loss + coeff * penalty(), correct
+    return coeff * penalty()
 
-  def train(self):
+  def _loss(self, 
+            member,
+            first, second, y):
+    return self._compute_loss(member, first, second, y)
+
+  def train(self,
+            step,
+            *,
+            coeff: float = 0.01,
+            eps: float = 0.001,
+            mode: str = "pairwise",
+            frac: float = None):
     ensemble_losses = [[] for _ in range(self._fusion)]
     ensemble_acc = np.array([0 for _ in range(self._fusion)])
     
@@ -620,7 +635,8 @@ class RewardModel(Node):
       last_index = (epoch+1)*self._batch_size
       if last_index > n_feedbacks:
           last_index = n_feedbacks
-          
+
+      self.agent.logger.log(f"train/reward/epoch", self._last_epochs + epoch, step)
       for member in range(self._fusion):
           
         # get random batch
@@ -628,7 +644,16 @@ class RewardModel(Node):
         first, second, y = (self._feedbacks_1[idxs],
                             self._feedbacks_2[idxs],
                             self._feedbacks_y[idxs])
-        curr_loss, correct = self._compute_constrained_loss(member, first, second, y)
+        curr_loss, correct = (
+          self._loss(member, first, second, y))
+        self.agent.logger.log(
+          f"train/reward/{member}/loss", curr_loss.item(), self._last_epochs + epoch)
+        if coeff > 0.0:
+          penalty = self._penalty(
+            member, coeff, eps, mode, frac)
+          self.agent.logger.log(
+            f"train/reward/{member}/penalty", penalty.item(), self._last_epochs + epoch)
+          curr_loss += penalty
         loss += curr_loss
         ensemble_losses[member].append(curr_loss.item())
         ensemble_acc[member] += correct
@@ -640,6 +665,7 @@ class RewardModel(Node):
       self._r_optimizer.step()
     
     ensemble_acc = ensemble_acc / total
+    self._last_epochs += num_epochs
     
     return ensemble_acc
 

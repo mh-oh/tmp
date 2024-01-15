@@ -30,6 +30,9 @@ conf.r.cls = "FusionMLP"
 conf.r.kwargs = dict()
 conf.r.fusion = 3
 
+conf.train_kwargs = dict(
+  coeff=0.0, eps=0.001, mode="pairwise", frac=None)
+
 conf.query = Conf()
 conf.query.starter_mode = "uniform"
 conf.query.starter_kwargs = dict()
