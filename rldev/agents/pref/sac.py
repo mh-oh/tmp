@@ -418,7 +418,7 @@ class SACPolicy(Node):
           
   def update(self, replay_buffer, logger, step, gradient_update=1):
     for index in range(gradient_update):
-      obs, action, reward, next_obs, not_done, not_done_no_max = replay_buffer.sample(
+      obs, action, reward, next_obs, not_done_no_max = replay_buffer.sample(
           self.batch_size)
 
       print_flag = False
@@ -438,7 +438,7 @@ class SACPolicy(Node):
           
   def update_state_ent(self, replay_buffer, logger, step, gradient_update=1, K=5):
     for index in range(gradient_update):
-      obs, full_obs, action, reward, next_obs, not_done, not_done_no_max = replay_buffer.sample_state_ent(
+      obs, full_obs, action, reward, next_obs, not_done_no_max = replay_buffer.sample_state_ent(
           self.batch_size)
 
       print_flag = False

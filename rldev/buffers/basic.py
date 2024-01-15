@@ -296,22 +296,19 @@ class PEBBLEBuffer(DictBuffer):
                      capacity, 
                      observation_space, 
                      action_space)
-    self._dones_no_max = self._container(Spec((), bool))
 
   def add(self,
           observation: Dict,
           action: np.ndarray,
           reward: np.ndarray,
           next_observation: Dict,
-          done: np.ndarray,
-          done_no_max: np.ndarray):
+          done: np.ndarray):
 
-    self._dones_no_max[self._cursor] = np.copy(not done_no_max)
     super().add(observation,
                 action,
                 reward,
                 next_observation,
-                not done,
+                done,
                 {})
 
   @overrides
@@ -329,19 +326,17 @@ class PEBBLEBuffer(DictBuffer):
     actions = self._actions[index]
     rewards = self._rewards[index].reshape(size, 1).astype(np.float32)
     next_observations = self._recursive_get(self._next_observations, index)
-    not_dones = self._dones[index].reshape(size, 1).astype(np.float32)
-    not_dones_no_max = self._dones_no_max[index].reshape(size, 1).astype(np.float32)
+    not_dones = (~self._dones[index]).reshape(size, 1).astype(np.float32)
     
-    env = self.agent._env
     def fn(observation):
-      return flatten_observation(env.envs[0].observation_space,
-                                  observation)
+      return self.agent._feature_extractor(observation)
+
     observations = fn(observations)
     next_observations = fn(next_observations)
 
     return (thu.torch(observations), thu.torch(actions),
           thu.torch(rewards), thu.torch(next_observations),
-          thu.torch(not_dones), thu.torch(not_dones_no_max))
+          thu.torch(not_dones))
   
   def _every_indices(self, ravel=True):
 
@@ -357,13 +352,10 @@ class PEBBLEBuffer(DictBuffer):
      actions,
      rewards,
      next_observations,
-     not_dones,
      not_dones_no_max) = self.sample(size)
 
-    env = self.agent._env
     def fn(observation):
-      return flatten_observation(env.envs[0].observation_space,
-                                  observation)
+      return self.agent._feature_extractor(observation)
 
     index = self._every_indices()
     every_observations = self._recursive_get(self._observations, index)
@@ -375,7 +367,6 @@ class PEBBLEBuffer(DictBuffer):
             actions,
             rewards,
             next_observations,
-            not_dones,
             not_dones_no_max)
 
   def relabel_rewards(self, predictor):

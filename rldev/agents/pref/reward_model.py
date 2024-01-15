@@ -185,8 +185,12 @@ class RewardModel(Node):
                      done,
                      {})
 
-  def _r_member(self, observation, action, member):
-    return self._r(thu.torch(observation),
+  def _r_member(self, 
+                observation: OrderedDict, 
+                action: np.ndarray, 
+                member: int):
+    observation = self.agent._feature_extractor(thu.torch(observation))
+    return self._r(observation,
                    thu.torch(action), member=member)
 
   # def get_rank_probability(self, x_1, x_2):
@@ -234,7 +238,8 @@ class RewardModel(Node):
   def r_hat(self,
             observation: OrderedDict,
             action: np.ndarray):
-    return self._r(thu.torch(observation), 
+    observation = self.agent._feature_extractor(thu.torch(observation))
+    return self._r(observation, 
                    thu.torch(action), reduce="mean")
   
   @overrides
@@ -453,9 +458,7 @@ class RewardModel(Node):
   def _unpack(self, segments):
 
     def fn(observation):
-      env = self.agent._env
-      return flatten_observation(env.envs[0].observation_space,
-                                 observation)
+      return self.agent._feature_extractor(observation)
 
     sa_t, r_t = [], []
     for seg in segments:
@@ -570,9 +573,7 @@ class RewardModel(Node):
                frac: float = None):
 
     def psi(observation, action):
-      observation = (
-        flatten_observation(self._observation_space,
-                            observation))
+      observation = self.agent._feature_extractor(observation)
       common = self._r._body[member]._common_body
       psi = self._r._body[member]._psi
       return psi(common(th.cat([observation, action], dim=-1)))

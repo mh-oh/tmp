@@ -13,12 +13,14 @@ class PEBBLE(PbRLAgent):
                env,
                test_env,
                policy,
+               feature_extractor,
                buffer,
                reward_model):
     super().__init__(config,
                      env,
                      test_env,
                      policy,
+                     feature_extractor,
                      buffer,
                      reward_model)
 

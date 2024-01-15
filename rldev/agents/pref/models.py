@@ -10,7 +10,7 @@ from torch import nn
 from typing import *
 
 from rldev.utils import torch as thu
-from rldev.utils.env import observation_dim, action_dim, flatten_observation
+from rldev.utils.env import observation_dim, action_dim
 from rldev.utils.nn import Fusion, _MLP as MLP
 
 
@@ -29,20 +29,17 @@ class Base(nn.Module):
     raise NotImplementedError()
   
   def predict(self,
-              observation: OrderedDict,
+              observation: th.Tensor,
               action: th.Tensor,
               **kwargs):
     ...
   
   def forward(self,
-              observation: OrderedDict,
+              observation: th.Tensor,
               action: th.Tensor,
               **kwargs):
     if not isinstance(action, th.Tensor):
-      raise ValueError()
-    if not isinstance(observation, (OrderedDict, dict)):
-      raise ValueError()
-    
+      raise ValueError()    
     return self.predict(observation,
                         action,
                         **kwargs)
@@ -70,11 +67,8 @@ class _MLP(Base):
            activations=activations).float().to(thu.device()))
 
   def predict(self, 
-              observation: OrderedDict, 
+              observation: th.Tensor, 
               action: th.Tensor):
-    observation = (
-      flatten_observation(self._observation_space, 
-                          observation))
     return self._body(th.cat([observation, action], dim=-1))
 
 
@@ -101,7 +95,7 @@ class FusionMLP(Base):
     self._body = Fusion([thunk for _ in range(fusion)])
 
   def predict(self, 
-              observation: OrderedDict, 
+              observation: th.Tensor, 
               action: th.Tensor,
               *, 
               member: int = -1, 
@@ -110,28 +104,6 @@ class FusionMLP(Base):
       return self._body[member](observation, action)
     else:
       return self._body(observation, action, reduce=reduce)
-
-
-class TrueDistance(Base):
-
-  def __init__(self,
-               observation_space: Union[spaces.Dict, spaces.Box],
-               action_space: spaces.Box):
-    super().__init__(observation_space, action_space)
-    self._dummy = nn.Linear(2, 1)
-    self._optimizer = (
-      th.optim.Adam(self._dummy.parameters(), lr=0.001))
-  
-  @property
-  def optimizer(self):
-    return self._optimizer
-
-  def predict(self, observation, action):
-    self._dummy(th.randn((2,)))
-    target, object = (
-      observation["desired_goal"], observation["achieved_goal"])
-    return th.linalg.vector_norm(target - object, 
-                                 dim=-1, keepdim=True)
 
 
 class DistanceL2(Base):
@@ -160,12 +132,9 @@ class DistanceL2(Base):
     self._phi = projection()
 
   def predict(self, 
-              observation: OrderedDict, 
+              observation: th.Tensor, 
               action: th.Tensor, 
               **kwargs):
-    observation = (
-      flatten_observation(self._observation_space, 
-                          observation))
     input = th.cat([observation, action], dim=-1)
     z = self._common_body(input)
     psi, phi = self._psi(z), self._phi(z)
@@ -202,9 +171,6 @@ class DistanceL2(Base):
     self._output_activation = get(output_activation)()
   
   def predict(self, observation, action):
-    observation = (
-      flatten_observation(self._observation_space, 
-                          observation))
     z = self._common_body(th.cat([observation, action], dim=-1))
     psi, phi = self._psi(z), self._phi(z)
     return self._output_activation(
@@ -236,7 +202,7 @@ class FusionDistanceL2(Base):
     self._body = Fusion([thunk for _ in range(fusion)])
 
   def predict(self, 
-              observation: OrderedDict, 
+              observation: th.Tensor, 
               action: th.Tensor,
               *, 
               member: int = -1, 

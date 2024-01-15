@@ -13,7 +13,7 @@ from rldev.agents.core import Agent
 from rldev.agents.pref import utils
 from rldev.logging import DummyLogger
 from rldev.utils import torch as thu
-from rldev.utils.env import get_success_info, flatten_observation
+from rldev.utils.env import get_success_info
 from rldev.utils.structure import recursive_get
 
 
@@ -27,13 +27,15 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
                env,
                test_env,
                policy,
+               feature_extractor,
                buffer,
                reward_model,
                window=10):
     super().__init__(config,
                      env,
                      test_env,
-                     policy)
+                     policy,
+                     feature_extractor)
 
     self._buffer = buffer(self)
     self._reward_model = reward_model(self)
@@ -115,8 +117,7 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
         action = np.array([env.action_space.sample() for _ in range(env.num_envs)])
       else:
         with utils.eval_mode(self._policy):
-          obs = flatten_observation(env.envs[0].observation_space,
-                                    self.obs)
+          obs = self._feature_extractor(self.obs)
           action = self._policy.act(obs, sample=True)
       assert action.ndim == 2
       self.optimize_reward_model()
@@ -216,7 +217,6 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
                      action, 
                      pseudo_reward, 
                      next_observation, 
-                     done,
                      done_no_max)
     self._reward_model.add(observation,
                            action,
@@ -244,9 +244,8 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
 
       while not np.all(done):
         with utils.eval_mode(self._policy):
-          space = env.envs[0].observation_space
           action = self._policy.act(
-            flatten_observation(space, obs), sample=False)
+            self._feature_extractor(obs), sample=False)
         
         obs, reward, done, info = env.step(action)
         for i in range(self._n_envs):
