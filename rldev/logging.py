@@ -17,9 +17,22 @@ from rldev.agents.core import Node
 
 class DummyLogger(Node):
 
-  @property
-  def workspace(self):
-    return wandb.run.dir
+  def __init__(self, agent):
+    super().__init__(agent)
+
+  def define(self, *metrics, step_metric="train/step"):
+    ...
+
+  def log(self, key, x, step):
+    ...
+
+  @overrides
+  def save(self, dir: Path): ...
+  @overrides
+  def load(self, dir: Path): ...
+
+
+class WandbLogger(DummyLogger):
 
   def __init__(self, agent):
     super().__init__(agent)
@@ -37,14 +50,6 @@ class DummyLogger(Node):
     if key not in metrics:
       raise ValueError(f"unknown metric '{key}'")
     wandb.log({key: x, metrics[key]: step})
-
-  def dump(self, *args, **kwargs):
-    ...
-
-  @overrides
-  def save(self, dir: Path): ...
-  @overrides
-  def load(self, dir: Path): ...
 
 
 class Logger(Node):

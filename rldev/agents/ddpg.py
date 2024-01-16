@@ -127,9 +127,10 @@ class DDPG(OffPolicyAgent):
       test_env,
       policy: DDPGPolicy,
       buffer,
+      logging=True,
       observation_normalizer=None,
       action_noise=None):
-    super().__init__(config, env, test_env, policy, buffer)
+    super().__init__(config, env, test_env, policy, buffer, logging)
 
     def wrap(fn):
       return (lambda x: None) if fn is None else fn

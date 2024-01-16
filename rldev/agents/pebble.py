@@ -15,14 +15,16 @@ class PEBBLE(PbRLAgent):
                feature_extractor,
                policy,
                buffer,
-               reward_model):
+               reward_model,
+               logging=True):
     super().__init__(config,
                      env,
                      test_env,
                      feature_extractor,
                      policy,
                      buffer,
-                     reward_model)
+                     reward_model,
+                     logging)
 
   @overrides
   def save(self): super().save()

@@ -11,21 +11,22 @@ from pathlib import Path
 from typing import *
 
 from rldev.agents.core import Node
-from rldev.logging import DummyLogger
+from rldev.logging import WandbLogger, DummyLogger
 from rldev.utils.env import debug_vectorized_experience, get_success_info
 from rldev.utils.time import return_elapsed_time
 
 
 class Agent(metaclass=ABCMeta):
 
-  def setup_logger(self): return DummyLogger(self)
+  def setup_logger(self): return WandbLogger(self)
 
   def __init__(self,
                config,
                env,
                test_env,
                feature_extractor,
-               policy):
+               policy,
+               logging=True):
 
     # this_run_path = Path(os.path.realpath(sys.argv[0]))
     # self._workspace = wdir = (Path(this_run_path.parent) 
@@ -43,7 +44,8 @@ class Agent(metaclass=ABCMeta):
     self._test_env = test_env
     self._feature_extractor = feature_extractor(self)
     self._policy = policy(self)
-    self._logger = self.setup_logger()
+    self._logger = self.setup_logger() if logging else DummyLogger(self)
+    self._logging = logging
 
     self._training_steps = config.steps
     self._training = True
@@ -61,6 +63,9 @@ class Agent(metaclass=ABCMeta):
 
   @property
   def workspace(self):
+    if not self._logging:
+      raise AttributeError(
+        "with 'logging=False', there is no workspace")
     return Path(wandb.run.dir)
   
   @property
@@ -126,8 +131,9 @@ class OffPolicyAgent(Agent):
                test_env, 
                policy,
                buffer,
+               logging=True,
                window=30):
-    super().__init__(config, env, test_env, policy)
+    super().__init__(config, env, test_env, policy, logging)
     self._buffer = buffer(self)
 
     self.env_steps = 0

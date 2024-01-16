@@ -10,16 +10,12 @@ from pathlib import Path
 from typing import *
 
 from rldev.agents.pref import utils
-from rldev.logging import DummyLogger
 from rldev.agents.core import Agent
 from rldev.utils.env import get_success_info, flatten_observation
 from rldev.utils.structure import recursive_get
 
 
 class SAC(Agent):
-
-  @overrides
-  def setup_logger(self): return DummyLogger(self)
 
   def __init__(self,
                config,

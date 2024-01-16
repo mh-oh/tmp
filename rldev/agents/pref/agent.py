@@ -11,16 +11,11 @@ from pathlib import Path
 
 from rldev.agents.core import Agent
 from rldev.agents.pref import utils
-from rldev.logging import DummyLogger
 from rldev.utils import torch as thu
 from rldev.utils.env import get_success_info
-from rldev.utils.structure import recursive_get
 
 
 class PbRLAgent(Agent, metaclass=ABCMeta):
-
-  @overrides
-  def setup_logger(self): return DummyLogger(self)
 
   def __init__(self,
                config,
@@ -30,12 +25,14 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
                policy,
                buffer,
                reward_model,
+               logging=True,
                window=10):
     super().__init__(config,
                      env,
                      test_env,
                      feature_extractor,
-                     policy)
+                     policy,
+                     logging)
 
     self._buffer = buffer(self)
     self._reward_model = reward_model(self)
