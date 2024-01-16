@@ -13,6 +13,17 @@ from typing import *
 from rldev.environments.core import Env
 
 
+_registry = {}
+
+def register(name):
+  def decorator(cls):
+    _registry[name] = cls; return cls
+  return decorator
+
+def get(name):
+  return _registry[name]
+
+
 class BoxObservation(gymnasium.wrappers.FlattenObservation):
 
   def __init__(self, env):
@@ -30,22 +41,12 @@ class BoxObservation(gymnasium.wrappers.FlattenObservation):
       self.dict_observation_space, observation)
 
 
-class SuccessInfo(gymnasium.Wrapper):
-
-  def __init__(self, env):
-    super().__init__(env)
-
-  def step(self, action):
-    *step, info = super().step(action)
-    if "is_success" in info:
-      info["success"] = info["is_success"]
-    return *step, info
-
-
+@register("noise")
 class AddNoise(gymnasium.ObservationWrapper):
   
   def __init__(self, 
                env: Env, 
+               *,
                low: Union[SupportsFloat, NDArray[Any]], 
                high: Union[SupportsFloat, NDArray[Any]], 
                shape: Union[Sequence[int], None] = None):
@@ -66,10 +67,12 @@ class AddNoise(gymnasium.ObservationWrapper):
     return observation
 
 
+@register("pixel")
 class Pixel(gymnasium.ObservationWrapper):
   
   def __init__(self, 
                env: Env, 
+               *,
                key: str = "pixels", 
                shape: Tuple[int, int] = None):
     super().__init__(env)

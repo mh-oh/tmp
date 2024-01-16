@@ -43,22 +43,23 @@ register("uniform", conf)
 
 conf = get("uniform")
 conf.segment = 10000
+register("uniform-traj", conf)
+
+conf = get("uniform-traj")
 conf.query.starter_mode = "uniform_aligned"
 conf.query.starter_kwargs = dict(cluster=KMeans(n_clusters=3))
 conf.query.mode = "entropy_aligned"
 conf.query.kwargs = dict(cluster=KMeans(n_clusters=3))
 register("entropy-kmeans-3-traj", conf)
 
-conf = get("uniform")
-conf.segment = 10000
+conf = get("uniform-traj")
 conf.query.starter_mode = "uniform_aligned"
 conf.query.starter_kwargs = dict(cluster=KMeans(n_clusters=2))
 conf.query.mode = "entropy_aligned"
 conf.query.kwargs = dict(cluster=KMeans(n_clusters=2))
 register("entropy-kmeans-2-traj", conf)
 
-conf = get("uniform")
-conf.segment = 10000
+conf = get("uniform-traj")
 conf.query.starter_mode = "uniform_aligned"
 conf.query.starter_kwargs = dict(cluster=KMeans(n_clusters=2))
 conf.query.mode = "entropy_aligned"
@@ -66,8 +67,7 @@ conf.query.kwargs = dict(cluster=KMeans(n_clusters=2))
 conf.r.cls = "FusionDistanceL2"
 register("entropy-kmeans-2-traj-distance", conf)
 
-conf = get("uniform")
-conf.segment = 10000
+conf = get("uniform-traj")
 conf.query.starter_mode = "uniform_aligned"
 conf.query.starter_kwargs = dict(cluster=KMeans(n_clusters=1))
 conf.query.mode = "entropy_aligned"
@@ -76,8 +76,14 @@ conf.r.cls = "FusionDistanceL2"
 conf.r.kwargs = dict(output_activation="tanh")
 register("entropy-kmeans-1-traj-distance-tanh", conf)
 
-conf = get("uniform")
-conf.segment = 10000
+conf = get("uniform-traj")
 conf.query.mode = "entropy"
 conf.query.kwargs = dict(scale=10)
-register("entropy", conf)
+register("entropy-traj", conf)
+
+
+conf = get("entropy-traj")
+conf.env_kwargs = (
+  [("pixel",
+    dict(shape=(64, 64)))])
+register("entropy-rgb-traj", conf)

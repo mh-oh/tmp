@@ -6,6 +6,8 @@ from rldev.configs.registry.registry import register
 
 conf = Conf()
 
+conf.env_wrappers = []
+
 conf.num_seed_steps = 1000
 conf.reset_update = 100
 
