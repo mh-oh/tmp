@@ -5,10 +5,11 @@ from rldev.environments.registry import list_envs
 def make(name, **kwargs):
   import gymnasium
   import wandb
-  from rldev.environments.wrappers import GymApi
+  from rldev.environments.wrappers import GymApi, Pixel
   from gymnasium.wrappers.record_video import RecordVideo
   
   env = gymnasium.make(name, **kwargs)
+  # env = Pixel(env, shape=(64, 64))
   # env = RecordVideo(env, video_folder=f"{wandb.run.dir}/videos")
   return GymApi(env)
 

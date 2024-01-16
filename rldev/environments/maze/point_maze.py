@@ -129,6 +129,7 @@ class PointMaze(Env):
      info) = self._env.step(action)
     
     info["sparse_reward"] = reward
+    info["progress"] = self.compute_progress(next_observation)
     reward = self.compute_reward(next_observation,
                                  action, next_observation, info)
     return (next_observation,

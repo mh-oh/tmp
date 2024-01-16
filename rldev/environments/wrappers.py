@@ -6,8 +6,9 @@ import numpy as np
 from collections import OrderedDict
 from gymnasium import spaces
 from gymnasium.utils.step_api_compatibility import convert_to_done_step_api
-from typing import *
 from numpy.typing import *
+from PIL import Image
+from typing import *
 
 from rldev.environments.core import Env
 
@@ -67,16 +68,30 @@ class AddNoise(gymnasium.ObservationWrapper):
 
 class Pixel(gymnasium.ObservationWrapper):
   
-  def __init__(self, env: Env):
+  def __init__(self, 
+               env: Env, 
+               key: str = "pixels", 
+               shape: Tuple[int, int] = None):
     super().__init__(env)
     if env.render_mode != "rgb_array":
       raise AssertionError()
-    self.observation_space = (
-      spaces.Box(low=-np.inf, high=np.inf,
-                 shape=(env.render_height, env.render_width, 3)))
+    
+    h, w = env.render_height, env.render_width
+    if shape is not None:
+      h, w = shape
+
+    self.key = key
+    self.shape = shape
+    self.observation_space = spaces.Dict([(
+      key,
+      spaces.Box(0, 256, 
+                 shape=(h, w, 3), dtype=np.uint8))])
   
   def observation(self, observation):
-    return self.render()
+    shape, image = self.shape, self.render()
+    if shape is not None:
+      image = np.asarray(Image.fromarray(image).resize(shape))
+    return OrderedDict([(self.key, image)])
 
 
 class GymApi(gymnasium.Wrapper):

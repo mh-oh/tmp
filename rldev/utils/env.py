@@ -181,12 +181,29 @@ def flatten_space(space):
       if not isinstance(subspace, gym_types.Box):
         raise ValueError()
       if len(subspace.shape) > 1:
-        raise ValueError()
+        subspace = spaces.Box(subspace.low.reshape(-1), 
+                              subspace.high.reshape(-1), 
+                              dtype=subspace.dtype)
     append(subspace)
   
-  return spaces.Box(low=np.concatenate(low),
-                    high=np.concatenate(high),
+  return spaces.Box(np.concatenate(low), np.concatenate(high),
                     dtype=np.result_type(*dtype))
+
+
+def _reshape(x, shape):
+  if isinstance(x, np.ndarray):
+    return x.reshape(shape)
+  if isinstance(x, th.Tensor):
+    return x.reshape(*shape)
+  raise NotImplementedError()
+
+
+def _concatenate(xs, axis):
+  if instanceof(*xs, type=np.ndarray):
+    return np.concatenate(xs, axis=axis)
+  if instanceof(*xs, type=th.Tensor):
+    return th.cat(xs, dim=axis)
+  raise NotImplementedError()
 
 
 def flatten_observation(space: gym_types.Dict, 
@@ -198,22 +215,18 @@ def flatten_observation(space: gym_types.Dict,
   xs = []
   for key, subspace in space.spaces.items():
     x = observation[key]
-    if isinstance(subspace, gym_types.Dict):
+    if isinstance(subspace, spaces.Dict):
       x = flatten_observation(subspace, x)
     else:
-      if not isinstance(subspace, gym_types.Box):
+      if not isinstance(subspace, spaces.Box):
         raise ValueError()
-      if len(subspace.shape) > 1:
-        raise ValueError()
+      if (ndims := len(subspace.shape)) > 1:
+        if x.shape[-ndims:] != subspace.shape:
+          raise ValueError()
+        x = _reshape(x, (*x.shape[:-ndims], -1))
     xs.append(x)
 
-  axis = -1
-  if instanceof(*xs, type=np.ndarray):
-    return np.concatenate(xs, axis=axis)
-  if instanceof(*xs, type=th.Tensor):
-    return th.cat(xs, dim=axis)
-
-  raise NotImplementedError()
+  return _concatenate(xs, axis=-1)
 
 
 def get_success_info(info: dict):

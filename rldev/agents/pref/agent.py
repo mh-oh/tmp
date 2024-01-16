@@ -142,14 +142,13 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
           done_no_max[i] = False
       done_no_max = done_no_max.astype(float)
       
-      progress = env.envs[0].compute_progress
       for i in range(self._n_envs):
         success = get_success_info(info[i])
         if success is not None:
           self._episode_success[i] = max(self._episode_success[i], success)
-        self._episode_progress[i] = progress(recursive_get(i, self.obs))
-        self._episode_pseudo_return[i] += pseudo_reward ################################
-        self._episode_return[i] += reward[i] ###########################
+        self._episode_progress[i] = info[i]["progress"] #progress(recursive_get(i, self.obs))
+        self._episode_pseudo_return[i] += pseudo_reward[i]
+        self._episode_return[i] += reward[i]
         self._episode_sparse_return[i] += info[i]["sparse_reward"]
         self._episode_step[i] += 1
           
@@ -249,12 +248,10 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
         
         obs, reward, done, info = env.step(action)
         for i in range(self._n_envs):
-          progress = env.envs[0].compute_progress
-          if done[i]:
-            episode_progress[i] = progress(recursive_get(i, obs))
-          else:
+          if not done[i]:
             episode_return[i] += reward[i]
             episode_sparse_return[i] += info[i]["sparse_reward"]
+            episode_progress[i] = info[i]["progress"]
             success = get_success_info(info[i])
             if success is not None:
               episode_success[i] = max(episode_success[i], success)
