@@ -12,15 +12,15 @@ class PEBBLE(PbRLAgent):
                config,
                env,
                test_env,
-               policy,
                feature_extractor,
+               policy,
                buffer,
                reward_model):
     super().__init__(config,
                      env,
                      test_env,
-                     policy,
                      feature_extractor,
+                     policy,
                      buffer,
                      reward_model)
 

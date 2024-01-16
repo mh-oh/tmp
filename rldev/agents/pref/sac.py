@@ -231,8 +231,7 @@ class SACPolicy(Node):
                normalize_state_entropy: bool = True):
     super().__init__(agent)
 
-    if isinstance(observation_space, gym_types.Dict):
-      observation_space = flatten_space(observation_space)
+    observation_space = self.agent._feature_extractor.feature_space
 
     self._observation_space = observation_space
     self._action_space = action_space

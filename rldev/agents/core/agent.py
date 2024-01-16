@@ -24,8 +24,8 @@ class Agent(metaclass=ABCMeta):
                config,
                env,
                test_env,
-               policy,
-               feature_extractor):
+               feature_extractor,
+               policy):
 
     # this_run_path = Path(os.path.realpath(sys.argv[0]))
     # self._workspace = wdir = (Path(this_run_path.parent) 
@@ -41,8 +41,8 @@ class Agent(metaclass=ABCMeta):
     self._config = config
     self._env = env
     self._test_env = test_env
-    self._policy = policy(self)
     self._feature_extractor = feature_extractor(self)
+    self._policy = policy(self)
     self._logger = self.setup_logger()
 
     self._training_steps = config.steps

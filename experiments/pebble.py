@@ -7,7 +7,7 @@ from rldev.agents.pref.reward_model import RewardModel
 from rldev.agents.pebble import PEBBLE
 from rldev.agents.pref import utils
 from rldev.launcher import configure
-from rldev.utils.env import flatten_observation
+from rldev.feature_extractor import Flatten
 
 
 @configure
@@ -47,6 +47,7 @@ def main(conf):
 
   observation_space = env.envs[0].observation_space
   action_space = env.envs[0].action_space
+  feature_extractor = lambda agent: Flatten(observation_space)
   policy = (
     lambda agent: 
       SACPolicy(agent,
@@ -62,11 +63,6 @@ def main(conf):
                 conf.pi.kwargs,
                 conf.update_pi_every_n_steps, 
                 conf.learnable_alpha))
-
-  feature_extractor = (
-    lambda agent:
-      lambda observation:
-        flatten_observation(observation_space, observation))
 
   reward_model = (
     lambda agent:
@@ -90,8 +86,8 @@ def main(conf):
   agent = PEBBLE(conf,
                  env,
                  test_env,
-                 policy,
                  feature_extractor,
+                 policy,
                  buffer,
                  reward_model)
 

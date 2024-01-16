@@ -26,16 +26,16 @@ class PbRLAgent(Agent, metaclass=ABCMeta):
                config,
                env,
                test_env,
-               policy,
                feature_extractor,
+               policy,
                buffer,
                reward_model,
                window=10):
     super().__init__(config,
                      env,
                      test_env,
-                     policy,
-                     feature_extractor)
+                     feature_extractor,
+                     policy)
 
     self._buffer = buffer(self)
     self._reward_model = reward_model(self)
