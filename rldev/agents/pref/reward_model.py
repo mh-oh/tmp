@@ -355,7 +355,8 @@ class RewardModel(Node):
   def _query_entropy(self, n, *, scale):
     u"""Entropy."""
 
-    first, second = self._random_pairs(self._episodes(), n * scale)
+    first, second = self._random_pairs(
+      self._episodes(), n * scale, self._segment_length)
 
     entropy, _ = self.get_entropy(first, second)
     
