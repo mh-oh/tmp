@@ -72,7 +72,7 @@ def run(cmds):
                     time=timestamp(),
                     partition=partition,
                     nodelist=nodelist,
-                    header="source slurm_header.sh",
+                    header="source tools/launch/slurm_header.sh",
                     cmd=cmd)
       with open(tmp.name, "w") as fout:
         fout.write(CONTENTS.format(**kwargs))

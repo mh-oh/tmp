@@ -95,7 +95,7 @@ python experiments/ddpg+her.py ddpg+her --env=fetch-push --num_envs=8 --seed=3
 
 Then, execute:
 ```console
-$ python tmux.py experiments.tmux --me=<user>
+$ python tools/launch/tmux.py experiments.tmux --me=<user>
 ```
 - ``<user>`` must be your username in the local machine where the above command runs.
 
@@ -132,7 +132,7 @@ Note that the valid format is as follow.
 
 Then, execute:
 ```console
-$ python slurm.py experiments.slurm
+$ python tools/launch/slurm.py experiments.slurm
 ```
 
 - You must properly change the contents of ``slurm_header.sh``.
@@ -140,9 +140,9 @@ $ python slurm.py experiments.slurm
 
 ## Visualization
 
-See ``plot.py`` or simply run it:
+See ``tools/plot.py`` or simply run it:
 ```console
-$ python plot.py
+$ python tools/plot.py
 ```
 
 ## Todo
