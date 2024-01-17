@@ -31,7 +31,7 @@ conf.r.kwargs = dict()
 conf.r.fusion = 3
 
 conf.train_kwargs = dict(
-  coeff=0.0, eps=0.001, mode="pairwise", frac=None)
+  coeff=0.0, eps=0.001, mode="pairwise", frac=None, frac_n=None)
 
 conf.query = Conf()
 conf.query.starter_mode = "uniform"

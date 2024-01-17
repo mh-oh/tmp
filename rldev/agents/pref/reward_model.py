@@ -571,7 +571,11 @@ class RewardModel(Node):
                coeff: float = 0.01,
                eps: float = 0.001,
                mode: str = "pairwise",
-               frac: float = None):
+               frac: float = None,
+               frac_n: int = None):
+
+    if (frac is not None) and (frac_n is not None):
+      raise ValueError()
 
     def psi(observation, action):
       observation = self.agent._feature_extractor(observation)
@@ -589,6 +593,8 @@ class RewardModel(Node):
         raise ValueError(f"unknown mode '{mode}'")
       
       index = np.array(index)
+      if frac_n is not None:
+        index = np.random.permutation(index)[:frac_n]
       if frac is not None:
         n = int(len(index) * frac)
         index = np.random.permutation(index)[:n]
@@ -618,7 +624,8 @@ class RewardModel(Node):
             coeff: float = 0.01,
             eps: float = 0.001,
             mode: str = "pairwise",
-            frac: float = None):
+            frac: float = None,
+            frac_n: int = None):
     ensemble_losses = [[] for _ in range(self._fusion)]
     ensemble_acc = np.array([0 for _ in range(self._fusion)])
     
@@ -652,7 +659,7 @@ class RewardModel(Node):
           f"train/reward/{member}/loss", curr_loss.item(), self._last_epochs + epoch)
         if coeff > 0.0:
           penalty = self._penalty(
-            member, coeff, eps, mode, frac)
+            member, coeff, eps, mode, frac, frac_n)
           self.agent.logger.log(
             f"train/reward/{member}/penalty", penalty.item(), self._last_epochs + epoch)
           curr_loss += penalty
