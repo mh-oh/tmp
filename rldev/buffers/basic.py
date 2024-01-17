@@ -1,6 +1,7 @@
 
 from pathlib import Path
 import numpy as np
+import pickle
 import torch as th
 
 from abc import *
@@ -23,18 +24,19 @@ class Base(Node, metaclass=ABCMeta):
                n_envs: int,
                capacity: int,
                observation_space: spaces.Space,
-               action_space: spaces.Space):
+               action_space: spaces.Space,
+               disable_save: bool = True):
     super().__init__(agent)
 
     self._n_envs = n_envs
     self._capacity = capacity
-    self._observation_space = observation_space
     self._observation_spec = observation_spec(observation_space)
-    self._action_space = action_space
     self._action_spec = action_spec(action_space)
     
     self._cursor = 0
     self._full = False
+
+    self._disable_save = disable_save
 
   @abstractmethod
   def __len__(self):
@@ -56,6 +58,43 @@ class Base(Node, metaclass=ABCMeta):
   def sample(self, size: int):
     raise NotImplementedError()
 
+  def save(self, dir: Path):
+    if self._disable_save:
+      return
+
+    dir.mkdir(parents=True, exist_ok=True)
+    def save(path, x):
+      with open(path, "wb") as fout:
+        pickle.dump(x, fout)
+
+    save(dir / "_n_envs.pkl", self._n_envs)
+    save(dir / "_capacity.pkl", self._capacity)
+    save(dir / "_observation_spec.pkl", self._observation_spec)
+    save(dir / "_action_spec.pkl", self._action_spec)
+    save(dir / "_cursor.pkl", self._cursor)
+    save(dir / "_full.pkl", self._full)
+
+  def load(self, dir: Path):
+
+    def check(path, x):
+      with open(path, "rb") as fin:
+        y = pickle.load(fin)
+      x = getattr(self, x)
+      if x != y:
+        raise ValueError(f"expected {x} but got {y}")
+    
+    check(dir / "_n_envs.pkl", "_n_envs")
+    check(dir / "_capacity.pkl", "_capacity")
+    check(dir / "_observation_spec.pkl", "_observation_spec")
+    check(dir / "_action_spec.pkl", "_action_spec")
+
+    def load(path, x):
+      with open(path, "rb") as fin:
+        setattr(self, x, pickle.load(fin))
+
+    load(dir / "_cursor.pkl", "_cursor")
+    load(dir / "_full.pkl", "_full")
+
 
 class DictBuffer(Base):
   u"""Replay buffer used in off-policy algorithms.
@@ -63,10 +102,51 @@ class DictBuffer(Base):
   """
 
   @overrides
-  def save(self, dir: Path): ...
+  def save(self, dir: Path):
+    if self._disable_save:
+      return
+
+    super().save(dir)
+    def save(path, x):
+      np.save(path, x[:self._cursor, ...])
+
+    save(dir / "_actions", self._actions)
+    save(dir / "_rewards", self._rewards)
+    save(dir / "_dones", self._dones)
+    
+    with open(dir / "_infos.pkl", "wb") as fout:
+      pickle.dump(self._infos[:self._cursor], fout)
+
+    def save(dir, dict):
+      dir.mkdir(parents=True, exist_ok=True)
+      for keys, x in iteritems(dict):
+        np.save(dir / ".".join(keys), x[:self._cursor, ...])
+
+    save(dir / "_observations", self._observations)
+    save(dir / "_next_observations", self._next_observations)
 
   @overrides
-  def load(self, dir: Path): ...
+  def load(self, dir: Path):
+    super().load(dir)
+
+    def load(path, x):
+      x[:self._cursor, ...] = np.load(path)
+
+    load(dir / "_actions.npy", self._actions)
+    load(dir / "_rewards.npy", self._rewards)
+    load(dir / "_dones.npy", self._dones)
+
+    with open(dir / "_infos.pkl", "rb") as fin:
+      self._infos[:self._cursor] = pickle.load(fin)
+
+    def load(dir, dict):
+      for key in iterkeys(dict):
+        x = get_nest(dict, key)
+        x[:self._cursor, ...] = np.load(dir / f"{'.'.join(key)}.npy")
+
+    load(dir / "_observations", self._observations)
+    load(dir / "_next_observations", self._next_observations)
+
 
   @overrides
   def __len__(self):
@@ -77,12 +157,14 @@ class DictBuffer(Base):
                n_envs: int,
                capacity: int,
                observation_space: spaces.Dict,
-               action_space: spaces.Dict):
+               action_space: spaces.Dict,
+               disable_save: bool = True):
     super().__init__(agent,
                      n_envs, 
                      capacity, 
                      observation_space, 
-                     action_space)
+                     action_space,
+                     disable_save)
     self._capacity = max(capacity // n_envs, 1)
 
     self._observations = self._dict_container(self._observation_spec)
@@ -192,12 +274,14 @@ class EpisodicDictBuffer(DictBuffer):
                n_envs: int,
                capacity: int,
                observation_space: spaces.Dict,
-               action_space: spaces.Dict):
+               action_space: spaces.Dict,
+               disable_save: bool = True):
     super().__init__(agent,
                      n_envs, 
                      capacity, 
                      observation_space, 
-                     action_space)
+                     action_space,
+                     disable_save)
 
     capacity, n_envs = self._capacity, self._n_envs
     self._episode_cursor = np.zeros((n_envs,), dtype=int)
@@ -276,10 +360,10 @@ class EpisodicDictBuffer(DictBuffer):
 class PEBBLEBuffer(DictBuffer):
 
   @overrides
-  def save(self, dir: Path): ...
+  def save(self, dir: Path): super().save(dir)
 
   @overrides
-  def load(self, dir: Path): ...
+  def load(self, dir: Path): super().load(dir)
 
   @overrides
   def __len__(self):
@@ -290,12 +374,14 @@ class PEBBLEBuffer(DictBuffer):
                n_envs: int,
                capacity: int,
                observation_space: spaces.Dict,
-               action_space: spaces.Dict):
+               action_space: spaces.Dict,
+               disable_save: bool = True):
     super().__init__(agent,
                      n_envs, 
                      capacity, 
                      observation_space, 
-                     action_space)
+                     action_space,
+                     disable_save)
 
   def add(self,
           observation: Dict,

@@ -12,7 +12,6 @@ conf.num_seed_steps = 1000
 conf.reset_update = 100
 
 conf.steps = 1000000
-conf.replay_buffer_capacity = conf.ref("steps")
 conf.test_every_n_steps = 10000
 conf.test_episodes = 10
 conf.log_every_n_steps = 3000
@@ -22,6 +21,10 @@ conf.seed = 1
 conf.gradient_update = 2
 conf.learnable_alpha = (
   True, dict(init=0.1, lr=0.0001, betas=[0.9, 0.999]))
+
+conf.rb = Conf()
+conf.rb.capacity = conf.ref("steps")
+conf.rb.save = False
 
 conf.batch_size = 512
 conf.discount = 0.99

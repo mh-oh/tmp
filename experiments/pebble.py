@@ -41,9 +41,10 @@ def main(conf):
     lambda agent:
       PEBBLEBuffer(agent,
                    env.num_envs,
-                   int(conf.replay_buffer_capacity),
+                   int(conf.rb.capacity),
                    env.observation_space,
-                   env.action_space))
+                   env.action_space,
+                   disable_save=not conf.rb.save))
 
   observation_space = env.envs[0].observation_space
   action_space = env.envs[0].action_space
