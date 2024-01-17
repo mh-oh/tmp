@@ -174,8 +174,8 @@ class DistanceL2(Base):
     z = self._common_body(th.cat([observation, action], dim=-1))
     psi, phi = self._psi(z), self._phi(z)
     return self._output_activation(
-      th.linalg.vector_norm(psi - phi, 
-                            dim=-1, keepdim=True))
+      -th.linalg.vector_norm(psi - phi, 
+                             dim=-1, keepdim=True))
 
 
 class FusionDistanceL2(Base):
