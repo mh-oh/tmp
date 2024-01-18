@@ -10,3 +10,6 @@ wandb
 *.pkl
 *.out
 *.mp4
+*.zip
+*.pt
+*.nosync
