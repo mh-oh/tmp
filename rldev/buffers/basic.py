@@ -25,8 +25,10 @@ class Base(Node, metaclass=ABCMeta):
                capacity: int,
                observation_space: spaces.Space,
                action_space: spaces.Space,
-               disable_save: bool = True):
-    super().__init__(agent)
+               disable_save: bool = True,
+               disable_load: bool = True):
+    super().__init__(agent,
+                     disable_save, disable_load)
 
     self._n_envs = n_envs
     self._capacity = capacity
@@ -35,8 +37,6 @@ class Base(Node, metaclass=ABCMeta):
     
     self._cursor = 0
     self._full = False
-
-    self._disable_save = disable_save
 
   @abstractmethod
   def __len__(self):
@@ -59,8 +59,6 @@ class Base(Node, metaclass=ABCMeta):
     raise NotImplementedError()
 
   def save(self, dir: Path):
-    if self._disable_save:
-      return
 
     dir.mkdir(parents=True, exist_ok=True)
     def save(path, x):
@@ -103,8 +101,6 @@ class DictBuffer(Base):
 
   @overrides
   def save(self, dir: Path):
-    if self._disable_save:
-      return
 
     super().save(dir)
     def save(path, x):
@@ -158,13 +154,15 @@ class DictBuffer(Base):
                capacity: int,
                observation_space: spaces.Dict,
                action_space: spaces.Dict,
-               disable_save: bool = True):
+               disable_save: bool = True,
+               disable_load: bool = True):
     super().__init__(agent,
                      n_envs, 
                      capacity, 
                      observation_space, 
                      action_space,
-                     disable_save)
+                     disable_save,
+                     disable_load)
     self._capacity = max(capacity // n_envs, 1)
 
     self._observations = self._dict_container(self._observation_spec)
@@ -375,13 +373,15 @@ class PEBBLEBuffer(DictBuffer):
                capacity: int,
                observation_space: spaces.Dict,
                action_space: spaces.Dict,
-               disable_save: bool = True):
+               disable_save: bool = True,
+               disable_load: bool = True):
     super().__init__(agent,
                      n_envs, 
                      capacity, 
                      observation_space, 
                      action_space,
-                     disable_save)
+                     disable_save,
+                     disable_load)
 
   def add(self,
           observation: Dict,
