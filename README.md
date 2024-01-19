@@ -28,9 +28,6 @@ $ pip install moviepy
 $ pip install pandas
 ```
 
-``rldev`` requires you to have Mujoco binaries and a license key.
-See [here](https://github.com/openai/mujoco-py#obtaining-the-binaries-and-license-key).
-
 ## Algorithms
 
 * [DDPG](https://arxiv.org/abs/1509.02971), [SAC](https://arxiv.org/abs/1812.05905)
