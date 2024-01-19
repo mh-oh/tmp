@@ -156,11 +156,10 @@ class DistanceL2(Base):
     super().__init__(observation_space, action_space)
 
     odim = observation_dim(observation_space)
-    adim = action_dim(action_space)
-
     self._common_body = (
-      MLP(dims=[odim + adim, *common_dims],
+      MLP(dims=[odim, *common_dims],
           activations=common_activations).float().to(thu.device()))
+    
     def projection():
       return MLP(dims=[common_dims[-1], *projection_dims],
                  activations=projection_activations).float().to(thu.device())
@@ -171,7 +170,7 @@ class DistanceL2(Base):
     self._output_activation = get(output_activation)()
   
   def predict(self, observation, action):
-    z = self._common_body(th.cat([observation, action], dim=-1))
+    z = self._common_body(observation)
     psi, phi = self._psi(z), self._phi(z)
     return self._output_activation(
       -th.linalg.vector_norm(psi - phi, 
