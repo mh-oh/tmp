@@ -11,7 +11,7 @@ $ git clone https://github.com/mh-oh/rldev.git
 $ cd rldev
 $ conda create -n rldev python=3.8
 $ conda activate rldev
-$ pip install torch==1.8.0+cu111 -f https://download.pytorch.org/whl/torch_stable.html
+$ pip install torch==1.10.1+cu111 -f https://download.pytorch.org/whl/cu111/torch_stable.html
 $ pip install scikit-learn
 $ pip install tensorboard
 $ pip install tabulate
@@ -85,9 +85,10 @@ $ python experiments/pebble.py <conf> --env=<environment> --num_envs=1 --seed=1
 
 Make a text file, say ``experiments.tmux``, with the following contents.
 ```
-python experiments/ddpg+her.py ddpg+her --env=fetch-push --num_envs=8 --seed=1
-python experiments/ddpg+her.py ddpg+her --env=fetch-push --num_envs=8 --seed=2
-python experiments/ddpg+her.py ddpg+her --env=fetch-push --num_envs=8 --seed=3
+commands:
+  - python experiments/ddpg+her.py ddpg+her --env=fetch-push --num_envs=8 --seed=1
+  - python experiments/ddpg+her.py ddpg+her --env=fetch-push --num_envs=8 --seed=2
+  - python experiments/ddpg+her.py ddpg+her --env=fetch-push --num_envs=8 --seed=3
 ```
 
 Then, execute:

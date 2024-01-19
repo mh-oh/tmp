@@ -3,6 +3,7 @@ import argparse
 import itertools
 import os
 import subprocess
+import yaml
 
 from gpustat import GPUStatCollection
 from tabulate import tabulate
@@ -37,13 +38,10 @@ def new_tmux_sessions():
 u"""Commands."""
 
 def load_commands(file):
-  commands = []
-  with open(file, "r") as fin:
-    for line in fin:
-      line = line.rstrip()
-      if line:
-        commands.append(line)
-  return commands
+
+  with open(file, "rb") as fin:
+    data = yaml.safe_load(fin)
+  return data["commands"]
 
 
 u"""GPU resources."""
