@@ -92,20 +92,19 @@ class DictBuffer(Base):
   def save(self, dir: Path):
 
     super().save(dir)
-    def save(path, x):
-      np.save(path, x[:self._cursor, ...])
 
-    save(dir / "_actions", self._actions)
-    save(dir / "_rewards", self._rewards)
-    save(dir / "_dones", self._dones)
+    from rldev.utils.checkpoint import save_np
+    save_np(dir / "_actions.npy.nosync", self._actions)
+    save_np(dir / "_rewards.npy.nosync", self._rewards)
+    save_np(dir / "_dones.npy.nosync", self._dones)
     
     with open(dir / "_infos.pkl", "wb") as fout:
-      pickle.dump(self._infos[:self._cursor], fout)
+      pickle.dump(self._infos, fout)
 
     def save(dir, dict):
       dir.mkdir(parents=True, exist_ok=True)
       for keys, x in iteritems(dict):
-        np.save(dir / ".".join(keys), x[:self._cursor, ...])
+        save_np(dir / f"{'.'.join(keys)}.npy.nosync", x)
 
     save(dir / "_observations", self._observations)
     save(dir / "_next_observations", self._next_observations)
