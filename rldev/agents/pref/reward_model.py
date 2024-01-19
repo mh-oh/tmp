@@ -577,11 +577,23 @@ class RewardModel(Node):
     if (frac is not None) and (frac_n is not None):
       raise ValueError()
 
-    def psi(observation, action):
+    def psi(observation):
       observation = self.agent._feature_extractor(observation)
       common = self._r._body[member]._common_body
       psi = self._r._body[member]._psi
       return psi(common(observation))
+
+    def distance(x, y):
+      return th.linalg.vector_norm(x - y, dim=-1)
+
+    # if mode == "pairwise":
+    #   observations = stack(
+    #     [e.observation for e in self._episodes()], axis=0)
+    #   z = psi(thu.torch(observations))
+    #   return coeff * (nn.Softplus()(
+    #     distance(z[:, :-1, :], 
+    #              z[:, +1:, :]) - eps) ** 2).sum(dim=-1).mean()
+
 
     def compute(z):
       
@@ -606,8 +618,7 @@ class RewardModel(Node):
     def penalty():
       constraints = []
       for episode in self._episodes():
-        z = psi(thu.torch(episode.observation),
-                thu.torch(episode.action))
+        z = psi(thu.torch(episode.observation))
         constraints.append(compute(z))
       return th.mean(th.stack(constraints))
     
