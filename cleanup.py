@@ -35,7 +35,10 @@ def main(dir):
   print("Removing...")  
   for path in local_run_paths():
     print(f"- {path}")
-    shutil.rmtree(path)
+    try:
+      shutil.rmtree(path)
+    except:
+      print(f"  * cannot remove {path}")
 
 
 if __name__ == "__main__":
