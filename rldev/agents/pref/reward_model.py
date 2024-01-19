@@ -581,7 +581,7 @@ class RewardModel(Node):
       observation = self.agent._feature_extractor(observation)
       common = self._r._body[member]._common_body
       psi = self._r._body[member]._psi
-      return psi(common(th.cat([observation, action], dim=-1)))
+      return psi(common(observation))
 
     def compute(z):
       
