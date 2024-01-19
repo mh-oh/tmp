@@ -61,10 +61,8 @@ class Base(Node, metaclass=ABCMeta):
   def save(self, dir: Path):
 
     dir.mkdir(parents=True, exist_ok=True)
-    def save(path, x):
-      with open(path, "wb") as fout:
-        pickle.dump(x, fout)
 
+    from rldev.utils.checkpoint import save
     save(dir / "_n_envs.pkl", self._n_envs)
     save(dir / "_capacity.pkl", self._capacity)
     save(dir / "_observation_spec.pkl", self._observation_spec)
@@ -74,24 +72,15 @@ class Base(Node, metaclass=ABCMeta):
 
   def load(self, dir: Path):
 
-    def check(path, x):
-      with open(path, "rb") as fin:
-        y = pickle.load(fin)
-      x = getattr(self, x)
-      if x != y:
-        raise ValueError(f"expected {x} but got {y}")
-    
-    check(dir / "_n_envs.pkl", "_n_envs")
-    check(dir / "_capacity.pkl", "_capacity")
-    check(dir / "_observation_spec.pkl", "_observation_spec")
-    check(dir / "_action_spec.pkl", "_action_spec")
+    from rldev.utils.checkpoint import check    
+    check(self, dir / "_n_envs.pkl", "_n_envs")
+    check(self, dir / "_capacity.pkl", "_capacity")
+    check(self, dir / "_observation_spec.pkl", "_observation_spec")
+    check(self, dir / "_action_spec.pkl", "_action_spec")
 
-    def load(path, x):
-      with open(path, "rb") as fin:
-        setattr(self, x, pickle.load(fin))
-
-    load(dir / "_cursor.pkl", "_cursor")
-    load(dir / "_full.pkl", "_full")
+    from rldev.utils.checkpoint import load
+    load(self, dir / "_cursor.pkl", "_cursor")
+    load(self, dir / "_full.pkl", "_full")
 
 
 class DictBuffer(Base):
