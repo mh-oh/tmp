@@ -96,14 +96,14 @@ class Feedbacks:
             segments: DictExperience):
 
     def store(to, what):
-      to[index] = np.copy(what)
+      to[index] = what
 
     assert len(index) == segments.action.shape[0]
     store(self._actions, segments.action)
 
     def store(to, what):
       def fn(x, y):
-        x[index] = np.copy(y)
+        x[index] = y
       recursive_map(fn, to, what)
 
     store(self._observations, segments.observation)
@@ -609,7 +609,7 @@ class RewardModel(Node):
     index = np.arange(cursor, cursor + n) % self._capacity
     self._feedbacks_1.store(index, first)
     self._feedbacks_2.store(index, second)
-    self._feedbacks_y[index] = copy.deepcopy(labels)
+    self._feedbacks_y[index] = labels #copy.deepcopy(labels)
     self._cursor = (cursor + n) % self._capacity
 
     if cursor + n >= self._capacity:

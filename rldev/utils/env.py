@@ -100,7 +100,7 @@ class DictExperience:
   def get(self, index):
     
     def get(x):
-      return x[index].copy()
+      return x[index]
     
     observations = recursive_map(get, self.observation)
     actions = get(self.action)
