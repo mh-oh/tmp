@@ -282,6 +282,23 @@ def stack(inputs, axis):
     return output
 
 
+def concatenate(inputs, axis):
+
+  if instanceof(*inputs, type=np.ndarray):
+    return np.concatenate(inputs, axis=axis)
+  if instanceof(*inputs, type=th.Tensor):
+    return th.cat(inputs, dim=axis)
+
+  if instanceof(*inputs, type=OrderedDict):
+    output = OrderedDict()
+    for dict in inputs:
+      for key, x in dict.items():
+        output.setdefault(key, []).append(x)
+    for key in output:
+      output[key] = concatenate(output[key], axis)
+    return output
+
+
 def iteritems(d):
   u"""Nested iteration over `(key, value)` pairs.
   `key` is a tuple of nested keys in the dictionary `d`."""

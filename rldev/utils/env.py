@@ -8,7 +8,7 @@ from gymnasium import spaces
 from typing import *
 
 from rldev.utils import gym_types
-from rldev.utils.structure import AttrDict, recursive_map, instanceof
+from rldev.utils.structure import AttrDict, recursive_map, instanceof, concatenate
 
 
 def flatten_state(state, modalities=['observation', 'desired_goal']):
@@ -113,6 +113,34 @@ class DictExperience:
                           rewards,
                           next_observations,
                           dones)
+  
+  def __getitem__(self, index):
+    return self.get(index)
+
+  @classmethod
+  def concatenate(cls, inputs, axis):
+
+    (observations,
+     actions,
+     rewards,
+     next_observations,
+     dones) = [], [], [], [], []
+    for x in inputs:
+      observations.append(x.observation)
+      actions.append(x.action)
+      rewards.append(x.reward)
+      next_observations.append(x.next_observation)
+      dones.append(x.done)
+
+    def concat(inputs):
+      return concatenate(inputs, axis=axis)
+    return cls(concat(observations),
+               concat(actions),
+               concat(rewards),
+               concat(next_observations),
+               concat(dones))
+
+    ...
 
 
 def action_spec(space: gym_types.Space):

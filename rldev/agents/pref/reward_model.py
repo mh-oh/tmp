@@ -77,6 +77,44 @@ def compute_smallest_dist(obs, full_obs):
   return total_dists.unsqueeze(1)
 
 
+class Feedbacks:
+
+  def __init__(self,
+               observation_space: spaces.Dict,
+               action_space: spaces.Box,
+               capacity: int,
+               segment_length: int):
+    
+    def _(spec):
+      return container((capacity, segment_length), spec)
+
+    self._observations = _(observation_spec(observation_space))
+    self._actions = _(action_spec(action_space))
+  
+  def store(self, 
+            index: np.ndarray,
+            segments: DictExperience):
+
+    def store(to, what):
+      to[index] = np.copy(what)
+
+    assert len(index) == segments.action.shape[0]
+    store(self._actions, segments.action)
+
+    def store(to, what):
+      def fn(x, y):
+        x[index] = np.copy(y)
+      recursive_map(fn, to, what)
+
+    store(self._observations, segments.observation)
+
+  def __getitem__(self, index):
+    return (recursive_map(lambda x: x[index], 
+                          self._observations),
+            self._actions[index])
+
+
+
 class RewardModel(Node):
 
   def __init__(self, 
@@ -121,8 +159,17 @@ class RewardModel(Node):
     self._cursor = 0
     self._full = False
 
-    self._feedbacks_1 = np.empty((max_feedbacks,), dtype=object)
-    self._feedbacks_2 = np.empty((max_feedbacks,), dtype=object)
+    # self._feedbacks_1 = np.empty((max_feedbacks,), dtype=object)
+    # self._feedbacks_2 = np.empty((max_feedbacks,), dtype=object)
+    # self._feedbacks_y = np.empty((max_feedbacks, 1), dtype=np.float32)
+
+    def feedbakcs():
+      return Feedbacks(observation_space,
+                       action_space,
+                       capacity=max_feedbacks,
+                       segment_length=segment_length)
+    self._feedbacks_1 = feedbakcs()
+    self._feedbacks_2 = feedbakcs()
     self._feedbacks_y = np.empty((max_feedbacks, 1), dtype=np.float32)
     
     r_cls = {"FusionMLP": FusionMLP,
@@ -225,8 +272,8 @@ class RewardModel(Node):
   def p_hat_entropy(self, first, second, member=-1):
     # softmaxing to get the probabilities according to eqn 1
     with th.no_grad():
-      r_hat1 = self._r_member(*self._stack(first), member) #self._r[member](thu.torch(x_1))
-      r_hat2 = self._r_member(*self._stack(second), member) #self._r[member](thu.torch(x_2))
+      r_hat1 = self._r_member(first.observation, first.action, member) #self._r[member](thu.torch(x_1))
+      r_hat2 = self._r_member(second.observation, second.action, member) #self._r[member](thu.torch(x_2))
       r_hat1 = r_hat1.sum(axis=1)
       r_hat2 = r_hat2.sum(axis=1)
       r_hat = th.cat([r_hat1, r_hat2], axis=-1)
@@ -250,6 +297,7 @@ class RewardModel(Node):
     th.save(self._r.state_dict(), dir / "_r.pt")
 
     def save_nosync(file, obj):
+      return
       with open(dir / f"{file}.npy.nosync", "wb") as fout:
         np.save(fout, obj)
     
@@ -294,8 +342,8 @@ class RewardModel(Node):
                           self._feedbacks_2[epoch*batch_size:last_index],
                           self._feedbacks_y[epoch*batch_size:last_index])
 
-      observations_1, actions_1 = self._stack(first)
-      observations_2, actions_2 = self._stack(second)
+      observations_1, actions_1 = first #self._stack(first)
+      observations_2, actions_2 = second #self._stack(second)
       labels = th.from_numpy(y.flatten()).long().to(device)
 
       total += labels.size(0)
@@ -325,17 +373,35 @@ class RewardModel(Node):
   u"""Acquisition functions.
   They return batched pair of segments."""
 
-  def _query_uniform(self, n):
+  def _query_uniform(self, n: int):
     u"""Random uniform."""
     return self._random_pairs(
       self._episodes(), n, self._segment_length)
 
   def _query_uniform_aligned(self, 
-                             n,
+                             n: int,
                              *,
                              cluster,
-                             cluster_discard_outlier=True):
+                             cluster_discard_outlier: bool = True):
     u"""Random uniform pairs of segments with matching targets."""
+
+    from rldev.utils.structure import chunk
+    labels, clusters = self._compute_clusters(
+      self._episodes(), cluster, cluster_discard_outlier)
+    
+    first, second = [], []
+    def append(a, b):
+      first.append(a); second.append(b)
+    for cluster, k in zip(clusters,
+                          chunk(n, len(labels))):
+      append(*self._random_pairs(cluster, 
+                                 k, self._segment_length))
+    concat = DictExperience.concatenate
+    return concat(first, axis=0), concat(second, axis=0)
+
+    pairs = np.array(pairs, dtype=object)
+    return (np.concatenate(pairs[:, 0], axis=0),
+            np.concatenate(pairs[:, 1], axis=0))
 
     from rldev.utils.structure import chunk
     labels, clusters = self._compute_clusters(
@@ -352,7 +418,7 @@ class RewardModel(Node):
     return (np.concatenate(pairs[:, 0], axis=0),
             np.concatenate(pairs[:, 1], axis=0))
   
-  def _query_entropy(self, n, *, scale):
+  def _query_entropy(self, n: int, *, scale: float):
     u"""Entropy."""
 
     first, second = self._random_pairs(
@@ -364,10 +430,10 @@ class RewardModel(Node):
     return first[topn], second[topn]
 
   def _query_entropy_aligned(self, 
-                             n,
+                             n: int,
                              *,
                              cluster,
-                             cluster_discard_outlier=True):
+                             cluster_discard_outlier: bool = True):
     u"""Top-`n` entropy pairs with matching targets."""
 
     first, second = self._every_aligned_pairs(
@@ -382,23 +448,38 @@ class RewardModel(Node):
   u"""Common auxiliary functions."""
 
   def _episodes(self):
+    u"""Return recent `max_episodes` episodes.
+    """
+    return self._buffer.get_episodes()
     return np.array(
       list(self._buffer.get_episodes()), dtype=object)
 
-  def _sample(self, episodes, n):
+  def _sample(self, 
+              episodes: DictExperience, 
+              n: int):
     u"""Sample `n` samples randomly from `episodes`."""
     return episodes[
       np.random.choice(len(episodes), size=n, replace=True)]
 
-  def _random_pairs(self, episodes, n, segment_length):
+  def _random_pairs(self, 
+                    episodes: DictExperience, 
+                    n: int, 
+                    segment_length: int):
     u"""Sample `n` random pairs of segments."""
     first, second = (self._segment(episodes, size=segment_length),
                      self._segment(episodes, size=segment_length))
     return (self._sample(first, n), 
             self._sample(second, n))
 
-  def _discover_targets(self, episodes):
+  def _discover_targets(self, 
+                        episodes: DictExperience):
     u"""Extranct targets from `episodes`."""
+    targets = np.unique(
+      episodes.observation["desired_goal"], axis=1)
+    N, H, d = targets.shape
+    if H != 1:
+      raise AssertionError()
+    return targets[:, 0, :]
     targets = []
     for episode in episodes:
       target, = np.unique(
@@ -407,9 +488,9 @@ class RewardModel(Node):
     return np.array(targets)
 
   def _compute_clusters(self, 
-                        episodes, 
+                        episodes: DictExperience, 
                         cluster,
-                        cluster_discard_outlier):
+                        cluster_discard_outlier: bool):
     u"""Cluster `episodes` based on their desired goals."""
 
     labels = cluster.fit(self._discover_targets(episodes)).labels_
@@ -418,22 +499,44 @@ class RewardModel(Node):
       unique_labels.discard(-1)
 
     unique_labels = list(unique_labels)
-    return (unique_labels, list(episodes[labels == label] 
-                                for label in unique_labels))
+    return (unique_labels, 
+            list(episodes.get(labels == label) 
+                 for label in unique_labels))
 
-  def _every_pairs(self, episodes):
+  def _every_pairs(self, 
+                   episodes: DictExperience):
     u"""Find every pairs of trajectories."""
+    N, *_ = episodes.reward.shape
+    pairs = episodes[
+      np.array(list(combinations(range(N), 2))).T]
+    return pairs[0, ...], pairs[1, ...]
+
     pairs = np.array([[first, second]
       for first, second in combinations(episodes, 2)], dtype=object)
     return pairs[..., 0], pairs[..., 1]
 
   def _every_aligned_pairs(self,
-                           episodes,
-                           length,
+                           episodes: DictExperience,
+                           length: int,
                            cluster,
-                           cluster_discard_outlier):
+                           cluster_discard_outlier: bool):
     u"""Find every pairs of trajectories with matching 
     desired goals."""
+
+    _, clusters = self._compute_clusters(
+      episodes, cluster, cluster_discard_outlier)
+
+    first, second = [], []
+    def append(a, b):
+      first.append(a); second.append(b)
+    for cluster in clusters:
+      append(*self._every_pairs(self._segment(cluster, length)))
+    concat = DictExperience.concatenate
+    return concat(first, axis=0), concat(second, axis=0)
+    raise
+    pairs = np.array(pairs, dtype=object)
+    return (np.concatenate(pairs[:, 0], axis=0),
+            np.concatenate(pairs[:, 1], axis=0))
 
     _, clusters = self._compute_clusters(
       episodes, cluster, cluster_discard_outlier)
@@ -446,8 +549,27 @@ class RewardModel(Node):
     return (np.concatenate(pairs[:, 0], axis=0),
             np.concatenate(pairs[:, 1], axis=0))
 
-  def _segment(self, episodes, size):
+  def _segment(self, 
+               episodes: DictExperience, 
+               size: int):
     u"""Randomly segment `episodes` with size `size`."""
+
+    N, H = episodes.reward.shape
+    if H != self._max_episode_steps:
+      raise AssertionError()
+
+    def _steps():
+      return (np.arange(0, size) + 
+              np.random.randint(
+                0, self._max_episode_steps - size + 1))
+    
+    index = np.arange(N)[..., np.newaxis].repeat(size, -1)
+    steps = np.array([_steps() for _ in range(N)], dtype=int)
+    return episodes.get((index, steps))
+
+    return np.array([get(episode) 
+                     for episode in episodes], dtype=object)
+
     def get(episode):
       steps = (np.arange(0, size) + 
                np.random.randint(
@@ -456,7 +578,14 @@ class RewardModel(Node):
     return np.array([get(episode) 
                      for episode in episodes], dtype=object)
 
-  def _unpack(self, segments):
+  def _unpack(self, segments: DictExperience):
+
+    def fn(observation):
+      return self.agent._feature_extractor(observation)
+
+    return (np.concatenate([fn(segments.observation), 
+                            segments.action], axis=-1),
+            segments.reward[..., np.newaxis])
 
     def fn(observation):
       return self.agent._feature_extractor(observation)
@@ -467,30 +596,35 @@ class RewardModel(Node):
       r_t.append(seg.reward)
     return np.stack(sa_t, axis=0), np.stack(r_t, axis=0)[..., np.newaxis]
 
-  def _stack(self, segments):
-    
-    def get(fn):
-      return [fn(s) for s in segments]
-    return (stack(get(lambda s: s.observation), axis=0),
-            stack(get(lambda s: s.action), axis=0))
+  def store_feedbacks(self, 
+                      first: DictExperience, 
+                      second: DictExperience, 
+                      labels: np.ndarray):
 
-  def store_feedbacks(self, first, second, labels):
+    n, T, *_ = first.reward.shape
+    if len(labels) != n:
+      raise AssertionError()
 
-    n = len(labels)
     cursor = self._cursor
     index = np.arange(cursor, cursor + n) % self._capacity
-    self._feedbacks_1[index] = copy.deepcopy(first)
-    self._feedbacks_2[index] = copy.deepcopy(second)
+    self._feedbacks_1.store(index, first)
+    self._feedbacks_2.store(index, second)
     self._feedbacks_y[index] = copy.deepcopy(labels)
     self._cursor = (cursor + n) % self._capacity
 
     if cursor + n >= self._capacity:
       self._full = True
 
-  def answer(self, first, second):
+  def answer(self, 
+             first: DictExperience, second: DictExperience):
+
+    print(type(first))
 
     sa_t_1, r_t_1 = self._unpack(first)
     sa_t_2, r_t_2 = self._unpack(second)
+
+    print(sa_t_1.shape)
+    print(r_t_1.shape)
 
     assert len(sa_t_1) == self._effective_budget
     sum_r_t_1 = np.sum(r_t_1, axis=1)
@@ -548,8 +682,8 @@ class RewardModel(Node):
 
   def _compute_loss(self, member, first, second, y):
 
-    observations_1, actions_1 = self._stack(first)
-    observations_2, actions_2 = self._stack(second)
+    observations_1, actions_1 = first #self._stack(first)
+    observations_2, actions_2 = second #self._stack(second)
     
     y = th.from_numpy(y.flatten()).long().to(device)
 
@@ -586,14 +720,15 @@ class RewardModel(Node):
     def distance(x, y):
       return th.linalg.vector_norm(x - y, dim=-1)
 
-    # if mode == "pairwise":
-    #   observations = stack(
-    #     [e.observation for e in self._episodes()], axis=0)
-    #   z = psi(thu.torch(observations))
-    #   return coeff * (nn.Softplus()(
-    #     distance(z[:, :-1, :], 
-    #              z[:, +1:, :]) - eps) ** 2).sum(dim=-1).mean()
+    if mode == "pairwise":
+      observations = self._episodes().observation
+      z = psi(thu.torch(observations))
+      print("psi", z.shape)
+      return coeff * (nn.Softplus()(
+        distance(z[:, :-1, :], 
+                 z[:, +1:, :]) - eps) ** 2).sum(dim=-1).mean()
 
+    raise NotImplementedError()
 
     def compute(z):
       
@@ -664,6 +799,7 @@ class RewardModel(Node):
         first, second, y = (self._feedbacks_1[idxs],
                             self._feedbacks_2[idxs],
                             self._feedbacks_y[idxs])
+        print(first[0]["observation"].shape)
         curr_loss, correct = (
           self._loss(member, first, second, y))
         self.agent.logger.log(

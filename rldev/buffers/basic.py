@@ -336,10 +336,23 @@ class EpisodicDictBuffer(DictBuffer):
       starts = self._episode_starts[:, i][is_done_episode]
       length = self._episode_length[:, i][is_done_episode]
       for start, length in set(zip(starts, length)):
-        yield (np.arange(start, 
-                         start + length) % capacity, i)
+        yield (np.arange(start, start + length) % capacity, 
+               np.ones((length,), dtype=int) * i)
 
-  def get_episodes(self):
+  def get_episodes(self) -> DictExperience:
+    
+    indices, env_indices = [], []
+    for index, env in self.episodes():
+      indices.append(index); env_indices.append(env)
+    
+    indices = np.array(indices, dtype=int)
+    env_indices = np.array(env_indices, dtype=int)
+    assert indices.shape == env_indices.shape
+
+    return self.get((indices, env_indices))
+
+    print(np.array(env, dtype=int))
+    exit(0)
     return map(self.get, self.episodes())
 
 
