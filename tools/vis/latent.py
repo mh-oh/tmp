@@ -18,7 +18,7 @@ from rldev.agents.pref import utils
 from rldev.buffers.basic import PEBBLEBuffer
 from rldev.configs import get
 from rldev.utils import torch as thu
-from rldev.feature_extractor import Flatten
+from rldev.feature_extractor import Combine
 
 
 plt.rcParams.update(
@@ -101,7 +101,7 @@ buffer = (
 
 observation_space = env.envs[0].observation_space
 action_space = env.envs[0].action_space
-feature_extractor = lambda agent: Flatten(observation_space)
+feature_extractor = lambda agent: Combine(observation_space)
 policy = (
   lambda agent: 
     SACPolicy(agent,

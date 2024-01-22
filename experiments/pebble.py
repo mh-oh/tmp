@@ -7,7 +7,7 @@ from rldev.agents.pref.reward_model import RewardModel
 from rldev.agents.pebble import PEBBLE
 from rldev.agents.pref import utils
 from rldev.launcher import configure
-from rldev.feature_extractor import Flatten
+from rldev.feature_extractor import Combine
 
 
 @configure
@@ -48,7 +48,7 @@ def main(conf):
 
   observation_space = env.envs[0].observation_space
   action_space = env.envs[0].action_space
-  feature_extractor = lambda agent: Flatten(observation_space)
+  feature_extractor = lambda agent: Combine(observation_space)
   policy = (
     lambda agent: 
       SACPolicy(agent,

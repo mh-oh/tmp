@@ -26,7 +26,7 @@ class Extractor(nn.Module):
     ...
 
 
-class Flatten(Extractor):
+class Combine(Extractor):
   
   def __init__(self, 
                observation_space: spaces.Dict):
