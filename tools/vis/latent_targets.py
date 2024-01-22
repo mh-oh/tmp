@@ -19,7 +19,7 @@ from rldev.configs import get
 from rldev.utils import torch as thu
 from rldev.feature_extractor import Combine
 
-from tools.common import find_rundir, run_info
+from tools.common import find_rundir
 
 
 plt.rcParams.update(
@@ -28,6 +28,14 @@ plt.rcParams.update(
    "xtick.labelsize": "medium",
    "ytick.labelsize": "medium",
    "legend.fontsize": "medium",})
+
+
+def run_info(run):
+  fields = run.config["_fields"]
+  return (fields["conf"],
+          fields["seed"],
+          fields["env"],
+          fields["test_env"])
 
 
 parser = argparse.ArgumentParser()
@@ -152,12 +160,31 @@ psi = features["_psi"].detach().cpu().numpy()
 n, n_envs, d = psi.shape
 psi = psi.reshape((n * n_envs, d))
 
-fig, ax = plt.subplots(figsize=(2, 2))
-ax.scatter(psi[:, 0], psi[:, 1], alpha=0.1)
+
+fig, axes = plt.subplots(nrows=2, ncols=1, figsize=(2.6*1, 2*2))
+
+ax = axes[0]
+x = ax.scatter(psi[:, 0], psi[:, 1], alpha=0.1)
 ax.set_xlim(-1.5, 1.5)
 ax.set_ylim(-1.5, 1.5)
-ax.set_title("Psi Distribution")
+ax.set_title("Discovered Targets")
+c = fig.colorbar(x, ax=ax)
+c.set_alpha(0.0)
+c.set_ticks([])
+c.solids.set_alpha(0.0)
+c.outline.set_visible(False)
+
+ax = axes[1]
+psi = np.concatenate([psi, np.array([[-1.5, -1.5], [1.5, 1.5]])], axis=0)
+h, xedges, yedges, image = ax.hist2d(psi[:, 0], psi[:, 1], bins=[25, 25], density=True)
+ax.set_xlim(-1.5, 1.5)
+ax.set_ylim(-1.5, 1.5)
+cb = fig.colorbar(image, ax=ax)
+cb.formatter.set_powerlimits((0, 0))
+cb.ax.yaxis.set_offset_position("right")
+cb.update_ticks()
 
 fig.tight_layout()
 fig.savefig(save_dir / "latent_targets.png")
+print(save_dir / "latent_targets.png")
 
