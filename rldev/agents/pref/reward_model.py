@@ -399,25 +399,6 @@ class RewardModel(Node):
     concat = DictExperience.concatenate
     return concat(first, axis=0), concat(second, axis=0)
 
-    pairs = np.array(pairs, dtype=object)
-    return (np.concatenate(pairs[:, 0], axis=0),
-            np.concatenate(pairs[:, 1], axis=0))
-
-    from rldev.utils.structure import chunk
-    labels, clusters = self._compute_clusters(
-      self._episodes(), cluster, cluster_discard_outlier)
-    
-    pairs = []
-    for cluster, k in zip(clusters,
-                          chunk(n, len(labels))):
-      pairs.append([
-        *self._random_pairs(cluster, 
-                            k, 
-                            self._segment_length)])
-    pairs = np.array(pairs, dtype=object)
-    return (np.concatenate(pairs[:, 0], axis=0),
-            np.concatenate(pairs[:, 1], axis=0))
-  
   def _query_entropy(self, n: int, *, scale: float):
     u"""Entropy."""
 
@@ -451,8 +432,6 @@ class RewardModel(Node):
     u"""Return recent `max_episodes` episodes.
     """
     return self._buffer.get_episodes()
-    return np.array(
-      list(self._buffer.get_episodes()), dtype=object)
 
   def _sample(self, 
               episodes: DictExperience, 
@@ -480,12 +459,6 @@ class RewardModel(Node):
     if H != 1:
       raise AssertionError()
     return targets[:, 0, :]
-    targets = []
-    for episode in episodes:
-      target, = np.unique(
-        episode.observation["desired_goal"], axis=0)
-      targets.append(target)
-    return np.array(targets)
 
   def _compute_clusters(self, 
                         episodes: DictExperience, 
@@ -511,10 +484,6 @@ class RewardModel(Node):
       np.array(list(combinations(range(N), 2))).T]
     return pairs[0, ...], pairs[1, ...]
 
-    pairs = np.array([[first, second]
-      for first, second in combinations(episodes, 2)], dtype=object)
-    return pairs[..., 0], pairs[..., 1]
-
   def _every_aligned_pairs(self,
                            episodes: DictExperience,
                            length: int,
@@ -533,21 +502,6 @@ class RewardModel(Node):
       append(*self._every_pairs(self._segment(cluster, length)))
     concat = DictExperience.concatenate
     return concat(first, axis=0), concat(second, axis=0)
-    raise
-    pairs = np.array(pairs, dtype=object)
-    return (np.concatenate(pairs[:, 0], axis=0),
-            np.concatenate(pairs[:, 1], axis=0))
-
-    _, clusters = self._compute_clusters(
-      episodes, cluster, cluster_discard_outlier)
-
-    pairs = []
-    for cluster in clusters:
-      pairs.append([
-        *self._every_pairs(self._segment(cluster, length))])    
-    pairs = np.array(pairs, dtype=object)
-    return (np.concatenate(pairs[:, 0], axis=0),
-            np.concatenate(pairs[:, 1], axis=0))
 
   def _segment(self, 
                episodes: DictExperience, 
@@ -567,17 +521,6 @@ class RewardModel(Node):
     steps = np.array([_steps() for _ in range(N)], dtype=int)
     return episodes.get((index, steps))
 
-    return np.array([get(episode) 
-                     for episode in episodes], dtype=object)
-
-    def get(episode):
-      steps = (np.arange(0, size) + 
-               np.random.randint(
-                 0, self._max_episode_steps - size + 1))
-      return episode.get(steps)
-    return np.array([get(episode) 
-                     for episode in episodes], dtype=object)
-
   def _unpack(self, segments: DictExperience):
 
     def fn(observation):
@@ -586,15 +529,6 @@ class RewardModel(Node):
     return (np.concatenate([fn(segments.observation), 
                             segments.action], axis=-1),
             segments.reward[..., np.newaxis])
-
-    def fn(observation):
-      return self.agent._feature_extractor(observation)
-
-    sa_t, r_t = [], []
-    for seg in segments:
-      sa_t.append(np.concatenate([fn(seg.observation), seg.action], axis=-1))
-      r_t.append(seg.reward)
-    return np.stack(sa_t, axis=0), np.stack(r_t, axis=0)[..., np.newaxis]
 
   def store_feedbacks(self, 
                       first: DictExperience, 
