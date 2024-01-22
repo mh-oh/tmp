@@ -32,7 +32,7 @@ plt.rcParams.update(
 
 parser = argparse.ArgumentParser()
 parser.add_argument("runid")
-args = parser.parse_args(["d19unki1"])
+args = parser.parse_args()
 
 save_dir = Path(f"tools/vis/outputs/{args.runid}")
 save_dir.mkdir(parents=True, exist_ok=True)
