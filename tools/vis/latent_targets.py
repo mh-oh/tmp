@@ -8,7 +8,6 @@ import torch as th
 import torchextractor as thx
 import wandb
 
-from matplotlib.animation import FuncAnimation
 from pathlib import Path
 
 from rldev.agents.pebble import PEBBLE
@@ -33,10 +32,9 @@ plt.rcParams.update(
 
 parser = argparse.ArgumentParser()
 parser.add_argument("runid")
-parser.add_argument("--n_episodes", type=int, default=3)
-args = parser.parse_args()
+args = parser.parse_args(["d19unki1"])
 
-save_dir = Path(f"tools/vis/outputs/{args.runid}") / "latent"
+save_dir = Path(f"tools/vis/outputs/{args.runid}")
 save_dir.mkdir(parents=True, exist_ok=True)
 
 api = wandb.Api()
@@ -78,7 +76,8 @@ buffer = (
                  env.num_envs,
                  int(conf.rb.capacity),
                  env.observation_space,
-                 env.action_space))
+                 env.action_space,
+                 disable_load=False))
 
 
 observation_space = env.envs[0].observation_space
@@ -132,92 +131,33 @@ agent = PEBBLE(conf,
 
 
 agent.load(find_rundir(args.runid) / "files" / "agent")
-r = agent._reward_model._r
 
 
-_env = env.envs[0]
+agent._buffer._cursor = 1000000
 
-def draw_episode(episode):
-  observation = _env.reset()
+def input(observation):
+  return thu.torch(agent._feature_extractor(observation))
 
-  observations, images, infos = [observation], [_env.render()], []
-  r_hat, psi, phi = [], [], []
-  done = False
-  while not done:
-    with utils.eval_mode(agent._policy):
-      action = agent._policy.act(
-        agent._feature_extractor(observation), sample=False)
-    
-    observation, reward, done, info = _env.step(action)
-    observations.append(observation)
-    images.append(_env.render())
-    infos.append(info)
-
-    def input(observation):
-      return thu.torch(agent._feature_extractor(observation))
-
-    _r = thx.Extractor(r._body[0], ["_psi", "_phi"])
-    _r_hat, _features = _r(input(observation), thu.torch(action))
-    r_hat.append(thu.numpy(_r_hat).squeeze())
-    psi.append(thu.numpy(_features["_psi"]))
-    phi.append(thu.numpy(_features["_phi"]))
-
-  # First set up the figure, the axis, and the plot element we want to animate
-  fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(3*2,2*2))
-  # fig = plt.figure()
-  # ax = plt.axes(xlim=(0, 2), ylim=(-2, 2))
-  ax = axes[0, 0]
-  im = ax.imshow(images[0])
-  ax.set_xticks([])
-  ax.set_yticks([])
-
-  ax = axes[0, 1]
-  ax.set_xlim(-1.5, 1.5)
-  ax.set_ylim(-1.5, 1.5)
-  psi_scatter = ax.scatter([], [], c="#D93226", label="\psi")
-  phi_scatter = ax.scatter([], [], c="#78BA6B", label="\phi")
-  psi_line, = ax.plot([], [], c="#D93226", alpha=0.5)
-  phi_line, = ax.plot([], [], c="#78BA6B", alpha=0.5)
-  # ax.legend()
-
-  psi_norm = np.linalg.norm(np.array(psi), axis=-1)
-  phi_norm = np.linalg.norm(np.array(phi), axis=-1)
-
-  axes[1, 0].plot(psi_norm)
-  axes[1, 0].set_title("L2 Norm of \psi")
-  axes[1, 0].set_xlabel("Step")
-  axes[1, 0].set_ylim(0, 1.5)
-  axes[1, 1].plot(phi_norm)
-  axes[1, 1].set_title("L2 Norm of \phi")
-  axes[1, 1].set_xlabel("Step")
-  axes[1, 1].set_ylim(0, 1.5)
-  axes[1, 2].plot(np.array(r_hat))
-  axes[1, 2].set_title("Predicted rewards")
-  axes[1, 2].set_xlabel("Step")
-  axes[0, 2].plot(np.array([info["sparse_reward"] for info in infos]))
-  axes[0, 2].set_title("Success/Fail")
-  axes[0, 2].set_xlabel("Step")
-
-  def init():
-    ...
-
-  def update(t):
-
-    im.set_data(images[t])
-
-    psi_xy = np.array(psi[:t+1])
-    psi_scatter.set_offsets(psi_xy[-1])
-    psi_line.set_data(psi_xy[:, 0], psi_xy[:, 1])
-
-    phi_xy = np.array(phi[:t+1])
-    phi_scatter.set_offsets(phi_xy[-1])
-    phi_line.set_data(phi_xy[:, 0], phi_xy[:, 1])
-
-  anim = FuncAnimation(fig, update, 
-                      frames=list(range(len(psi))), init_func=init)
-  fig.tight_layout()
-  anim.save(f"{str(save_dir)}/episode_{episode}.mp4", fps=30, extra_args=['-vcodec', 'libx264'])
+_r = agent._reward_model._r
+_r = thx.Extractor(_r._body[0], ["_psi", "_phi"])
+def forward(observation):
+  return _r(input(observation), th.zeros(()))
 
 
-for episode in range(args.n_episodes):
-  draw_episode(episode)
+_observations = agent._buffer._observations
+
+_, features = forward(thu.torch(_observations))
+
+psi = features["_psi"].detach().cpu().numpy()
+n, n_envs, d = psi.shape
+psi = psi.reshape((n * n_envs, d))
+
+fig, ax = plt.subplots(figsize=(2, 2))
+ax.scatter(psi[:, 0], psi[:, 1], alpha=0.1)
+ax.set_xlim(-1.5, 1.5)
+ax.set_ylim(-1.5, 1.5)
+ax.set_title("Psi Distribution")
+
+fig.tight_layout()
+fig.savefig(save_dir / "latent_targets.png")
+

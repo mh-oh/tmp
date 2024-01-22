@@ -71,6 +71,7 @@ class Base(Node, metaclass=ABCMeta):
     save(dir / "_full.pkl", self._full)
 
   def load(self, dir: Path):
+    print("loading buffer...")
 
     from rldev.utils.checkpoint import check    
     check(self, dir / "_n_envs.pkl", "_n_envs")
@@ -114,11 +115,11 @@ class DictBuffer(Base):
     super().load(dir)
 
     def load(path, x):
-      x[:self._cursor, ...] = np.load(path)
+      y = np.load(path); x[:len(y), ...] = y
 
-    load(dir / "_actions.npy", self._actions)
-    load(dir / "_rewards.npy", self._rewards)
-    load(dir / "_dones.npy", self._dones)
+    load(dir / "_actions.npy.nosync", self._actions)
+    load(dir / "_rewards.npy.nosync", self._rewards)
+    load(dir / "_dones.npy.nosync", self._dones)
 
     with open(dir / "_infos.pkl", "rb") as fin:
       self._infos[:self._cursor] = pickle.load(fin)
@@ -126,11 +127,11 @@ class DictBuffer(Base):
     def load(dir, dict):
       for key in iterkeys(dict):
         x = get_nest(dict, key)
-        x[:self._cursor, ...] = np.load(dir / f"{'.'.join(key)}.npy")
+        y = np.load(dir / f"{'.'.join(key)}.npy.nosync")
+        x[:len(y), ...] = y
 
     load(dir / "_observations", self._observations)
     load(dir / "_next_observations", self._next_observations)
-
 
   @overrides
   def __len__(self):
