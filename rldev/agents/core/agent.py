@@ -129,11 +129,17 @@ class OffPolicyAgent(Agent):
                config, 
                env, 
                test_env, 
+               feature_extractor, 
                policy,
                buffer,
                logging=True,
                window=30):
-    super().__init__(config, env, test_env, policy, logging)
+    super().__init__(config, 
+                     env, 
+                     test_env, 
+                     feature_extractor, 
+                     policy, 
+                     logging)
     self._buffer = buffer(self)
 
     self.env_steps = 0

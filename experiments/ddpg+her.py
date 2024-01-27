@@ -14,7 +14,7 @@ from rldev.utils import torch as ptu
 from rldev.utils.nn import FCBody
 
 
-@configure("experiments")
+@configure
 def main(conf):
 
   if conf.gamma < 1.: conf.clip_target_range = (np.round(-(1 / (1 - conf.gamma)), 2), 0.)
@@ -23,10 +23,10 @@ def main(conf):
   th.set_num_threads(min(4, conf.num_envs))
   th.set_num_interop_threads(min(4, conf.num_envs))
 
-  env = lambda: create_env_by_name(conf.env, conf.seed)
+  fn = lambda: create_env_by_name(conf.env, conf.seed)
 
-  train_env = EnvModule(env, num_envs=conf.num_envs, seed=conf.seed)
-  test_env = EnvModule(env, num_envs=conf.num_envs, name='test_env', seed=conf.seed + 1138)
+  env = EnvModule(fn, num_envs=conf.num_envs, seed=conf.seed)
+  test_env = EnvModule(fn, num_envs=conf.num_envs, name='test_env', seed=conf.seed + 1138)
 
   e = test_env
   actor = Actor(FCBody(e.state_dim + e.goal_dim, conf.policy_layers, nn.LayerNorm), e.action_dim, e.max_action).to(ptu.device())
@@ -35,7 +35,7 @@ def main(conf):
   policy = (
     lambda agent: 
       DDPGPolicy(agent, 
-                 train_env.max_action,
+                 env.max_action,
                  actor,
                  conf.actor_lr,
                  conf.actor_weight_decay,
@@ -46,10 +46,10 @@ def main(conf):
   buffer = (
     lambda agent:
       HindsightBuffer(agent,
-                      train_env.num_envs,
+                      env.num_envs,
                       conf.replay_size,
-                      train_env.observation_space,
-                      train_env.action_space,
+                      env.observation_space,
+                      env.action_space,
                       conf.her))
 
   observation_normalizer = (
@@ -65,8 +65,9 @@ def main(conf):
     conf.never_done = True  # NOTE: This is important in the standard Goal environments, which are never done
 
   agent = DDPG(conf,
-               train_env,
+               env,
                test_env,
+               lambda agent: ...,
                policy,
                buffer,
                observation_normalizer,

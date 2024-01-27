@@ -2,6 +2,8 @@
 import numpy as np
 import random
 
+import gymnasium
+
 try:
   import tensorflow as tf
 except:
