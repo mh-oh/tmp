@@ -1,34 +1,23 @@
 
-from pathlib import Path
 import numpy as np
-import pickle
-import torch as th
 
 from abc import *
-from collections import OrderedDict
 from gymnasium import spaces
 from overrides import overrides
 from typing import *
 
-from rldev.agents.core import Node, Agent
-from rldev.utils import misc
-from rldev.utils import torch as thu
-from rldev.utils.env import *
-from rldev.utils.structure import *
+from rldev.utils.env import observation_spec, action_spec, container, DictExperience
+from rldev.utils.structure import recursive_map
 
 
-class Base(Node, metaclass=ABCMeta):
+class Buffer(metaclass=ABCMeta):
 
   def __init__(self,
-               agent: Agent,
                n_envs: int,
                capacity: int,
                observation_space: spaces.Space,
-               action_space: spaces.Space,
-               disable_save: bool = True,
-               disable_load: bool = True):
-    super().__init__(agent,
-                     disable_save, disable_load)
+               action_space: spaces.Space):
+    super().__init__()
 
     self._n_envs = n_envs
     self._capacity = capacity
@@ -58,114 +47,42 @@ class Base(Node, metaclass=ABCMeta):
   def sample(self, size: int):
     raise NotImplementedError()
 
-  def save(self, dir: Path):
 
-    dir.mkdir(parents=True, exist_ok=True)
-
-    from rldev.utils.checkpoint import save
-    save(dir / "_n_envs.pkl", self._n_envs)
-    save(dir / "_capacity.pkl", self._capacity)
-    save(dir / "_observation_spec.pkl", self._observation_spec)
-    save(dir / "_action_spec.pkl", self._action_spec)
-    save(dir / "_cursor.pkl", self._cursor)
-    save(dir / "_full.pkl", self._full)
-
-  def load(self, dir: Path):
-    print("loading buffer...")
-
-    from rldev.utils.checkpoint import check    
-    check(self, dir / "_n_envs.pkl", "_n_envs")
-    check(self, dir / "_capacity.pkl", "_capacity")
-    check(self, dir / "_observation_spec.pkl", "_observation_spec")
-    check(self, dir / "_action_spec.pkl", "_action_spec")
-
-    from rldev.utils.checkpoint import load
-    load(self, dir / "_cursor.pkl", "_cursor")
-    load(self, dir / "_full.pkl", "_full")
-
-
-class DictBuffer(Base):
+class DictBuffer(Buffer):
   u"""Replay buffer used in off-policy algorithms.
   This expects dictionary observations.
   """
 
   @overrides
-  def save(self, dir: Path):
-
-    super().save(dir)
-
-    from rldev.utils.checkpoint import save_np
-    save_np(dir / "_actions.npy.nosync", self._actions)
-    save_np(dir / "_rewards.npy.nosync", self._rewards)
-    save_np(dir / "_dones.npy.nosync", self._dones)
-    
-    with open(dir / "_infos.pkl", "wb") as fout:
-      pickle.dump(self._infos, fout)
-
-    def save(dir, dict):
-      dir.mkdir(parents=True, exist_ok=True)
-      for keys, x in iteritems(dict):
-        save_np(dir / f"{'.'.join(keys)}.npy.nosync", x)
-
-    save(dir / "_observations", self._observations)
-    save(dir / "_next_observations", self._next_observations)
-
-  @overrides
-  def load(self, dir: Path):
-    super().load(dir)
-
-    def load(path, x):
-      y = np.load(path); x[:len(y), ...] = y
-
-    load(dir / "_actions.npy.nosync", self._actions)
-    load(dir / "_rewards.npy.nosync", self._rewards)
-    load(dir / "_dones.npy.nosync", self._dones)
-
-    with open(dir / "_infos.pkl", "rb") as fin:
-      self._infos[:self._cursor] = pickle.load(fin)
-
-    def load(dir, dict):
-      for key in iterkeys(dict):
-        x = get_nest(dict, key)
-        y = np.load(dir / f"{'.'.join(key)}.npy.nosync")
-        x[:len(y), ...] = y
-
-    load(dir / "_observations", self._observations)
-    load(dir / "_next_observations", self._next_observations)
-
-  @overrides
   def __len__(self):
-    return (self._capacity if self._full else self._cursor) * self._n_envs
+    return (self._capacity 
+            if self._full else self._cursor) * self._n_envs
 
   def __init__(self,
-               agent: Agent,
                n_envs: int,
                capacity: int,
                observation_space: spaces.Dict,
                action_space: spaces.Dict,
-               disable_save: bool = True,
-               disable_load: bool = True):
-    super().__init__(agent,
-                     n_envs, 
+               handle_timeouts: bool = True):
+    super().__init__(n_envs, 
                      capacity, 
                      observation_space, 
-                     action_space,
-                     disable_save,
-                     disable_load)
+                     action_space)
     self._capacity = max(capacity // n_envs, 1)
 
-    self._observations = self._dict_container(self._observation_spec)
-    self._actions = self._container(self._action_spec)
-    self._rewards = self._container(Spec((), float))
-    self._next_observations = self._dict_container(self._observation_spec)
-    self._dones = self._container(Spec((), bool))
-    self._infos = [None for _ in range(self._capacity)]
+    self._observations = self._zeros(self._observation_spec)
+    self._actions = self._zeros(self._action_spec)
+    self._rewards = self._zeros(((), float))
+    self._next_observations = self._zeros(self._observation_spec)
+    self._dones = self._zeros(((), bool))
 
-  def _container(self, spec):
-    return box_container((self._capacity, self._n_envs), spec)
+    self._handle_timeouts = handle_timeouts
+    if handle_timeouts:
+      self._timeouts = self._zeros(((), float))
 
-  def _dict_container(self, spec):
-    return dict_container((self._capacity, self._n_envs), spec)
+  def _zeros(self, spec):
+    return container(
+      (self._capacity, self._n_envs), spec, fill=0)
 
   def _recursive_get(self, x, index):
     return recursive_map(lambda x: x[index].copy(), x)
@@ -184,6 +101,9 @@ class DictBuffer(Base):
     store(self._actions, action)
     store(self._rewards, reward)
     store(self._dones, done)
+    # if self._handle_timeouts:
+    #   store(self._timeouts, np.array(
+    #     [x.get("TimeLimit.truncated", False) for x in info]))
 
     def store(to, what):
       def fn(x, y):
@@ -193,12 +113,24 @@ class DictBuffer(Base):
     store(self._observations, observation)
     store(self._next_observations, next_observation)
 
-    self._infos[self._cursor] = info
-
     self._cursor += 1
     if self._cursor == self._capacity:
       self._full, self._cursor = True, 0
-  
+
+  def get(self, index):
+
+    observations = self._recursive_get(self._observations, index)
+    actions = self._actions[index].copy()
+    rewards = self._rewards[index].copy()
+    next_observations = self._recursive_get(self._next_observations, index)
+    dones = self._dones[index].copy()
+
+    return (observations,
+            actions,
+            rewards,
+            next_observations,
+            dones)
+
   @overrides
   def sample(self, size: int):
     upper_bound = self._capacity if self._full else self._cursor
@@ -209,66 +141,40 @@ class DictBuffer(Base):
              np.random.randint(
                0, high=n_envs, size=(len(index),)))
 
-    observations = self._recursive_get(self._observations, index)
-    actions = self._actions[index].copy()
-    rewards = self._rewards[index].reshape(size, 1).astype(np.float32)
-    next_observations = self._recursive_get(self._next_observations, index)
-    dones = self._dones[index].copy()
+    (observations,
+     actions,
+     rewards,
+     next_observations,
+     dones) = self.get(index)
+    rewards = rewards[index].reshape(size, 1).astype(np.float32)
 
-    if self._agent._config.get('never_done'):
+    if self._handle_timeouts:
       dones = np.zeros_like(rewards, dtype=np.float32)
-    else:
-      raise ValueError("Never done or first visit succ must be set in goal environments to use HER.")
-    
-    gammas = self._agent._config.gamma * (1. - dones)
 
-    observations = np.concatenate([observations["observation"], observations["desired_goal"]], axis=-1)
-    next_observations = np.concatenate([next_observations["observation"], next_observations["desired_goal"]], axis=-1)
-
-    fn = self.agent._observation_normalizer
-    if fn is not None:
-      observations = fn(observations, update=False).astype(np.float32)
-      next_observations = fn(next_observations, update=False).astype(np.float32)
-
-    return (thu.torch(observations), thu.torch(actions),
-          thu.torch(rewards), thu.torch(next_observations),
-          thu.torch(gammas))
-
-
-  def _process_experience(self, exp):
-    self.add(exp.state,
-             exp.action,
-             exp.reward,
-             exp.next_state,
-             exp.done,
-             {})
+    return (observations,
+            actions,
+            rewards,
+            next_observations,
+            dones)
 
 
 class EpisodicDictBuffer(DictBuffer):
-
-  @overrides
-  def save(self, dir: Path): ...
-
-  @overrides
-  def load(self, dir: Path): ...
 
   @overrides
   def __len__(self):
     return super().__len__()
 
   def __init__(self,
-               agent: Agent,
                n_envs: int,
                capacity: int,
                observation_space: spaces.Dict,
                action_space: spaces.Dict,
-               disable_save: bool = True):
-    super().__init__(agent,
-                     n_envs, 
+               handle_timeouts: bool = True):
+    super().__init__(n_envs, 
                      capacity, 
                      observation_space, 
                      action_space,
-                     disable_save)
+                     handle_timeouts)
 
     capacity, n_envs = self._capacity, self._n_envs
     self._episode_cursor = np.zeros((n_envs,), dtype=int)
@@ -279,9 +185,8 @@ class EpisodicDictBuffer(DictBuffer):
           observation,
           action,
           reward,
-          next_state,
+          next_observation,
           done,
-          trajectory_over,
           info):
 
     # When the buffer is full, we rewrite on old episodes. 
@@ -301,12 +206,12 @@ class EpisodicDictBuffer(DictBuffer):
     super().add(observation,
                 action,
                 reward,
-                next_state,
+                next_observation,
                 done,
                 info)
 
     for i in range(self._n_envs):
-      if trajectory_over[i]:
+      if done[i]:
         s = self._episode_cursor[i]
         e = self._cursor
         if e < s:
@@ -314,20 +219,6 @@ class EpisodicDictBuffer(DictBuffer):
         index = np.arange(s, e) % self._capacity
         self._episode_length[index, i] = e - s
         self._episode_cursor[i] = self._cursor
-
-  def get(self, index):
-
-    observations = self._recursive_get(self._observations, index)
-    actions = self._actions[index].copy()
-    rewards = self._rewards[index].copy()
-    next_observations = self._recursive_get(self._next_observations, index)
-    dones = self._dones[index].copy()
-
-    return DictExperience(observations,
-                          actions,
-                          rewards,
-                          next_observations,
-                          dones)
 
   def episodes(self):
     
@@ -340,7 +231,7 @@ class EpisodicDictBuffer(DictBuffer):
         yield (np.arange(start, start + length) % capacity, 
                np.ones((length,), dtype=int) * i)
 
-  def get_episodes(self) -> DictExperience:
+  def get_episodes(self):
     
     indices, env_indices = [], []
     for index, env in self.episodes():
@@ -350,138 +241,6 @@ class EpisodicDictBuffer(DictBuffer):
     env_indices = np.array(env_indices, dtype=int)
     assert indices.shape == env_indices.shape
 
-    return self.get((indices, env_indices))
-
-    print(np.array(env, dtype=int))
-    exit(0)
-    return map(self.get, self.episodes())
-
-
-class PEBBLEBuffer(DictBuffer):
-
-  @overrides
-  def save(self, dir: Path): super().save(dir)
-
-  @overrides
-  def load(self, dir: Path): super().load(dir)
-
-  @overrides
-  def __len__(self):
-    return super().__len__()
-
-  def __init__(self,
-               agent: Agent,
-               n_envs: int,
-               capacity: int,
-               observation_space: spaces.Dict,
-               action_space: spaces.Dict,
-               disable_save: bool = True,
-               disable_load: bool = True):
-    super().__init__(agent,
-                     n_envs, 
-                     capacity, 
-                     observation_space, 
-                     action_space,
-                     disable_save,
-                     disable_load)
-
-  def add(self,
-          observation: Dict,
-          action: np.ndarray,
-          reward: np.ndarray,
-          next_observation: Dict,
-          done: np.ndarray):
-
-    super().add(observation,
-                action,
-                reward,
-                next_observation,
-                done,
-                {})
-
-  @overrides
-  def sample(self, size: int):
-
-    upper_bound = self._capacity if self._full else self._cursor
-    index = np.random.randint(0, upper_bound, size=size)
-
-    n_envs = self._n_envs
-    index = (index, 
-             np.random.randint(
-               0, high=n_envs, size=(len(index),)))
-
-    observations = self._recursive_get(self._observations, index)
-    actions = self._actions[index]
-    rewards = self._rewards[index].reshape(size, 1).astype(np.float32)
-    next_observations = self._recursive_get(self._next_observations, index)
-    not_dones = (~self._dones[index]).reshape(size, 1).astype(np.float32)
-    
-    def fn(observation):
-      return self.agent._feature_extractor(observation)
-
-    observations = fn(observations)
-    next_observations = fn(next_observations)
-
-    return (thu.torch(observations), thu.torch(actions),
-          thu.torch(rewards), thu.torch(next_observations),
-          thu.torch(not_dones))
-  
-  def _every_indices(self, ravel=True):
-
-    index = self._capacity if self._full else self._cursor
-    index = np.indices((index, self._n_envs))
-    if ravel:
-      index = tuple(map(np.ravel, index))
-    return tuple(index)
-
-  def sample_state_ent(self, size: int):
-    
-    (observations,
-     actions,
-     rewards,
-     next_observations,
-     not_dones_no_max) = self.sample(size)
-
-    def fn(observation):
-      return self.agent._feature_extractor(observation)
-
-    index = self._every_indices()
-    every_observations = self._recursive_get(self._observations, index)
-    every_observations = fn(every_observations)
-    every_observations = thu.torch(every_observations)
-
-    return (observations,
-            every_observations,
-            actions,
-            rewards,
-            next_observations,
-            not_dones_no_max)
-
-  def relabel_rewards(self, predictor):
-
-    env = self.agent._env
-
-    index = self._every_indices()
-    def batchify(*sequences, size):
-      length = len(sequences[0])
-      for s in sequences:
-        if len(s) != length:
-          raise ValueError("'sequences' should be of the same length")
-      def maybe_tuple(gen):
-        res = tuple(gen)
-        if len(sequences) == 1:
-          return res[0]
-        return res
-      for i in range(0, length, size):
-        yield maybe_tuple(
-          s[i : min(i + size, length)] for s in sequences)
-
-    for batch in batchify(*index, size=256):
-
-      observation = self._recursive_get(self._observations, batch)
-      action = self._actions[batch]
-
-      pred_reward = predictor.r_hat(observation, action)
-      self._rewards[batch] = thu.numpy(pred_reward)[..., 0]
-
+    return DictExperience(
+      *self.get((indices, env_indices)))
 

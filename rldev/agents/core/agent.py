@@ -1,24 +1,23 @@
 
 import numpy as np
 import time
-import pickle
 import wandb
 
 from abc import *
-from collections import OrderedDict, deque
+from collections import deque
 from overrides import overrides
 from pathlib import Path
 from typing import *
 
-from rldev.agents.core import Node
 from rldev.logging import WandbLogger, DummyLogger
+from rldev.utils import torch as thu
 from rldev.utils.env import debug_vectorized_experience, get_success_info
 from rldev.utils.time import return_elapsed_time
 
 
 class Agent(metaclass=ABCMeta):
 
-  def setup_logger(self): return WandbLogger(self)
+  def setup_logger(self): return WandbLogger()
 
   def __init__(self,
                config,
@@ -28,38 +27,16 @@ class Agent(metaclass=ABCMeta):
                policy,
                logging=True):
 
-    # this_run_path = Path(os.path.realpath(sys.argv[0]))
-    # self._workspace = wdir = (Path(this_run_path.parent) 
-    #                           / "data" 
-    #                           / this_run_path.stem
-    #                           / f"{config.run}")
-
-    # print(f"create working directory {wdir}")
-    # wdir.mkdir(parents=True, exist_ok=True)
-
-    self._nodes = OrderedDict()
-
     self._config = config
     self._env = env
     self._test_env = test_env
-    self._feature_extractor = feature_extractor(self)
+    self._feature_extractor = feature_extractor
     self._policy = policy(self)
     self._logger = self.setup_logger() if logging else DummyLogger(self)
     self._logging = logging
 
     self._training_steps = config.steps
     self._training = True
-
-  def __setattr__(self, name: str, value: Any):
-    if isinstance(value, Node):
-      self._nodes[name] = value
-    else:
-      object.__setattr__(self, name, value)
-
-  def __getattr__(self, name: str):
-    if name in self._nodes:
-      return self._nodes[name]
-    return object.__getattribute__(self, name)
 
   @property
   def workspace(self):
@@ -93,34 +70,6 @@ class Agent(metaclass=ABCMeta):
   @property
   def training(self):
     return self._training
-  
-  @abstractmethod
-  def save(self):
-
-    # Save registered nodes.
-    dir = self.save_dir
-    for key, node in self._nodes.items():
-      node.save(dir / key)
-    
-    # Save agent-specific data.
-    with open(dir / "_config.pkl", "wb") as fout:
-      pickle.dump(self._config, fout)
-    with open(dir / "_training.pkl", "wb") as fout:
-      pickle.dump(self._training, fout)
-
-  @abstractmethod
-  def load(self, dir: Path):
-
-    print("loading agent...")
-    # Load registered nodes.
-    for key, node in self._nodes.items():
-      node.load(dir / key)
-    
-    # Load agent-specific data.
-    with open(dir / "_config.pkl", "rb") as fin:
-      self._config = pickle.load(fin)
-    with open(dir / "_training.pkl", "rb") as fin:
-      self._training = pickle.load(fin)
 
 
 class OffPolicyAgent(Agent):
@@ -140,7 +89,7 @@ class OffPolicyAgent(Agent):
                      feature_extractor, 
                      policy, 
                      logging)
-    self._buffer = buffer(self)
+    self._buffer = buffer
 
     self.env_steps = 0
     self.opt_steps = 0
@@ -175,25 +124,40 @@ class OffPolicyAgent(Agent):
   def buffer(self):
     return self._buffer
 
-  @overrides
-  @abstractmethod
-  def save(self): super().save()
-  
-  @overrides
-  @abstractmethod
-  def load(self, dir:Path): super().load(dir)
+  def sample_batch(self):
+
+    (observation, 
+     action, 
+     reward, 
+     next_observation, 
+     done) = self._buffer.sample(self.config.batch_size)
+
+    fn = self._observation_normalizer
+    if fn is not None:
+      observation = fn(observation, update_stats=False)
+      next_observation = fn(next_observation, update_stats=False)
+
+    fn = self._feature_extractor
+    observation = fn(observation)
+    next_observation = fn(next_observation)
+
+    return (thu.torch(observation),
+            thu.torch(action),
+            thu.torch(reward),
+            thu.torch(next_observation),
+            thu.torch(done))
 
   @overrides
   def run(self, 
           epoch_steps: int, 
           test_episodes: int, *args, **kwargs):
 
+    self.state = self._env.reset()
     for epoch in range(int(self._training_steps // epoch_steps)):
       elapsed = self.train(epoch_steps)
       print(f"({epoch}) Training one epoch takes {elapsed:.2f} seconds.")
       elapsed = self.test(test_episodes)
       print(f"({epoch}) Evaluation takes {elapsed:.2f} seconds.")
-      self.save()
   
   @abstractmethod
   def process_episodic_records(self, done):
@@ -224,13 +188,12 @@ class OffPolicyAgent(Agent):
       self.training_mode()
 
     env = self._env
-    state = env.state 
 
     for _ in range(epoch_steps // env.num_envs):
-      action = self._policy(state)
+      action = self._policy(self.state)
       next_state, reward, done, info = env.step(action)
 
-      state, experience = debug_vectorized_experience(state, action, next_state, reward, done, info)
+      self.state, experience = debug_vectorized_experience(self.state, action, next_state, reward, done, info)
       for i in range(self._n_envs):
         success = get_success_info(experience.info[i])
         if success is not None:
@@ -253,6 +216,7 @@ class OffPolicyAgent(Agent):
     
     # If using MEP prioritized replay, fit the density model
     if self._config.prioritized_mode == 'mep':
+      raise
       self.prioritized_replay.fit_density_model()
       self.prioritized_replay.update_priority()
     

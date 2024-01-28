@@ -154,12 +154,13 @@ class Policy(Node, ActorCritic):
       if config.get('initial_explore') and len(agent.buffer) < config.initial_explore:
         res = np.array([agent._env.action_space.sample() for _ in range(agent._env.num_envs)])
       elif hasattr(agent, 'ag_curiosity'):
+        raise
         observation = agent.ag_curiosity.relabel_state(observation)
         
+    if agent._observation_normalizer is not None:
+      observation = agent._observation_normalizer(observation, update_stats=agent.training)
     observation = flatten_state(
       observation, config.modalities + config.goal_modalities)
-    if agent._observation_normalizer is not None:
-      observation = agent._observation_normalizer(observation, update=agent.training)
 
     if res is not None:
       return res
@@ -167,9 +168,13 @@ class Policy(Node, ActorCritic):
     observation = ptu.torch(observation)
 
     if config.get('use_actor_target'):
+      raise
       action = ptu.numpy(self.pi_target(observation))
     else:
       action = ptu.numpy(self.pi(observation))
+
+    if agent.training:
+      assert not greedy
 
     if agent.training and not greedy:
       action = agent._action_noise(action)
@@ -185,99 +190,11 @@ class Policy(Node, ActorCritic):
   
   @abstractmethod
   def optimize_batch(self,
-                     observations,
-                     actions,
-                     rewards,
-                     next_observations,
-                     gammas):
+                     observation,
+                     action,
+                     reward,
+                     next_observation,
+                     done):
     ...
 
 
-class StochasticPolicy(Node, ActorCritic):
-  u"""SAC variants."""
-
-  def __init__(self,
-               agent: OffPolicyAgent, 
-               max_action: float,
-               pi: StochasticActor,
-               pi_lr: float,
-               pi_weight_decay: float,
-               qf: Union[Critic, List[Critic]],
-               qf_lr: float,
-               qf_weight_decay: float):
-    
-    Node.__init__(self, agent)
-    ActorCritic.__init__(self,
-                         pi,
-                         pi_lr,
-                         pi_weight_decay,
-                         qf,
-                         qf_lr,
-                         qf_weight_decay)
-    self._max_action = max_action
-
-  @property
-  def pi(self):
-    return self._pi
-
-  @property
-  def pi_target(self):
-    return self._pi_target
-
-  @property
-  def qf(self):
-    return self._qf
-  
-  @property
-  def qf_target(self):
-    return self._qf_target
-
-  @overrides
-  def __call__(self, observation, greedy=False, **kwargs):
-
-    action_scale = self._max_action
-    agent = self.agent
-    config = agent.config
-
-    # initial exploration and intrinsic curiosity
-    res = None
-    if agent.training:
-      if config.get('initial_explore') and len(agent.buffer) < config.initial_explore:
-          res = np.array([agent._env.action_space.sample() for _ in range(agent._env.num_envs)])
-      elif hasattr(agent, 'ag_curiosity'):
-        observation = agent.ag_curiosity.relabel_state(observation)
-      
-    observation = flatten_state(
-      observation, config.modalities + config.goal_modalities)  # flatten goal environments
-    if agent._observation_normalizer is not None:
-      observation = agent._observation_normalizer(observation, update=agent.training)
-    
-    if res is not None:
-      return res
-
-    observation = ptu.torch(observation)
-
-    if config.get('use_actor_target'):
-      action, _ = self.pi_target(observation)
-    else:
-      action, _ = self.pi(observation)
-    action = ptu.numpy(action)
-
-    if agent.training and not greedy and config.get('eexplore'):
-      eexplore = config.eexplore
-      if hasattr(agent, 'ag_curiosity'):
-        eexplore = agent.ag_curiosity.go_explore * config.go_eexplore + eexplore
-      mask = (np.random.random((action.shape[0], 1)) < eexplore).astype(np.float32)
-      randoms = np.random.random(action.shape) * (2 * action_scale) - action_scale
-      action = mask * randoms + (1 - mask) * action
-    
-    return np.clip(action, -action_scale, action_scale)
-
-  @abstractmethod
-  def optimize_batch(self,
-                     observations,
-                     actions,
-                     rewards,
-                     next_observations,
-                     gammas):
-    ...

@@ -299,7 +299,7 @@ def concatenate(inputs, axis):
     return output
 
 
-def iteritems(d):
+def recursive_items(d):
   u"""Nested iteration over `(key, value)` pairs.
   `key` is a tuple of nested keys in the dictionary `d`."""
 
@@ -313,15 +313,15 @@ def iteritems(d):
   yield from f(d, ())
 
 
-def iterkeys(d):
+def recursive_keys(d):
   u"""Nested iteration over `key`s.
   `key` is a tuple of nested keys in the dictionary `d`."""
 
-  for key, _ in iteritems(d):
+  for key, _ in recursive_items(d):
     yield key
 
 
-def set_nest(d, key, x):
+def recursive_setitem(d, key, x):
   *keys, key = key
   for k in keys:
     if k not in d:
@@ -330,7 +330,7 @@ def set_nest(d, key, x):
   d[key] = x
 
 
-def get_nest(d, key):
+def recursive_getitem(d, key):
   x = d
   for k in key:
     x = x[k]

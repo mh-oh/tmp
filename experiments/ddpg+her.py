@@ -3,12 +3,13 @@ import numpy as np
 import torch as th
 import torch.nn as nn
 
-from rldev.agents.common.normalizer import *
-from rldev.agents.common.action_noise import *
+from rldev.agents.observation_normalizer import MeanStdNormalizer
+from rldev.agents.action_noise import GaussianActionNoise
 from rldev.agents.ddpg import DDPG, DDPGPolicy
 from rldev.agents.policy.ac import Actor, Critic
-from rldev.buffers.her import HindsightBuffer
-from rldev.environments import EnvModule, create_env_by_name
+from rldev.buffers.hindsight import HindsightBuffer
+from rldev.environments import make_vec_env
+from rldev.feature_extractor import Combine
 from rldev.launcher import configure
 from rldev.utils import torch as ptu
 from rldev.utils.nn import FCBody
@@ -23,15 +24,17 @@ def main(conf):
   th.set_num_threads(min(4, conf.num_envs))
   th.set_num_interop_threads(min(4, conf.num_envs))
 
-  fn = lambda: create_env_by_name(conf.env, conf.seed)
-
-  env = EnvModule(fn, num_envs=conf.num_envs, seed=conf.seed)
-  test_env = EnvModule(fn, num_envs=conf.num_envs, name='test_env', seed=conf.seed + 1138)
+  env = make_vec_env("FetchPush-v2", seed=1, n_envs=8)
+  test_env = make_vec_env("FetchPush-v2", seed=1000, n_envs=8)
 
   e = test_env
-  actor = Actor(FCBody(e.state_dim + e.goal_dim, conf.policy_layers, nn.LayerNorm), e.action_dim, e.max_action).to(ptu.device())
-  critic = Critic(FCBody(e.state_dim + e.goal_dim + e.action_dim, conf.policy_layers, nn.LayerNorm), 1).to(ptu.device())
+  actor = Actor(FCBody(e.state_dim + e.goal_dim, conf.policy_layers), e.action_dim, e.max_action).to(ptu.device())
+  critic = Critic(FCBody(e.state_dim + e.goal_dim + e.action_dim, conf.policy_layers), 1).to(ptu.device())
 
+  feature_extractor = Combine(env.observation_space,
+                              keys=["observation",
+                                    "desired_goal"])
+  print(feature_extractor.feature_space)
   policy = (
     lambda agent: 
       DDPGPolicy(agent, 
@@ -42,24 +45,23 @@ def main(conf):
                  critic,
                  conf.critic_lr,
                  conf.critic_weight_decay))
-  
-  buffer = (
-    lambda agent:
-      HindsightBuffer(agent,
-                      env.num_envs,
-                      conf.replay_size,
-                      env.observation_space,
-                      env.action_space,
-                      conf.her))
 
-  observation_normalizer = (
-    lambda agent: Normalizer(agent, MeanStdNormalizer()))
-  action_noise = (
-    lambda agent: 
-      ContinuousActionNoise(
-        agent, 
-        GaussianProcess, 
-        std=ConstantSchedule(conf.action_noise)))
+  def compute_reward(observation, action, next_observation):
+    return env.compute_reward(next_observation["achieved_goal"], 
+                              observation["desired_goal"], 
+                              {})
+
+
+  buffer = (
+    HindsightBuffer(env.num_envs,
+                    conf.replay_size,
+                    env.observation_space,
+                    env.action_space,
+                    compute_reward,
+                    conf.her))
+
+  observation_normalizer = MeanStdNormalizer(env.observation_space)
+  action_noise = GaussianActionNoise(mean=0.0, stddev=conf.action_noise)
 
   if e.goal_env:
     conf.never_done = True  # NOTE: This is important in the standard Goal environments, which are never done
@@ -67,7 +69,7 @@ def main(conf):
   agent = DDPG(conf,
                env,
                test_env,
-               lambda agent: ...,
+               feature_extractor,
                policy,
                buffer,
                observation_normalizer,

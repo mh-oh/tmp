@@ -164,7 +164,7 @@ class NatureConvBody(nn.Module):
 
 
 class FCBody(nn.Module):
-  def __init__(self, input_size, layer_sizes=(256, 256), norm = nn.Identity, activ = GELU, use_layer_init = True):
+  def __init__(self, input_size, layer_sizes=(256, 256), norm = nn.Identity, activ = GELU, use_layer_init = False):
     super(FCBody, self).__init__()
     self.feature_dim = layer_sizes[-1]
 

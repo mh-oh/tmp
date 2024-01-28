@@ -39,18 +39,19 @@ def debug_vectorized_experience(state, action, next_state, reward, done, info):
   )
   next_copy = deepcopy(next_state) # deepcopy handles dict states
 
-  for idx in np.argwhere(done):
-    i = idx[0]
-    if isinstance(next_copy, np.ndarray):
-      next_copy[i] = info[i].done_observation
-    else:
-      assert isinstance(next_copy, dict)
-      for key in next_copy:
-        next_copy[key][i] = info[i].done_observation[key]
+  for i, d in enumerate(done):
+    if d and info[i].get("terminal_observation") is not None:
+      if isinstance(next_copy, dict):
+        next_copy_ = info[i]["terminal_observation"]
+        # Replace next obs for the correct envs
+        for key in next_copy.keys():
+          next_copy[key][i] = next_copy_[key]
+      else:
+        raise
   
   experience.next_state = next_copy
   experience.trajectory_over = done
-  experience.done = np.array([info[i].terminal_state for i in range(len(done))], dtype=np.float32)
+  experience.done = done #np.array([info[i].terminal_state for i in range(len(done))], dtype=np.float32)
   experience.reset_state = next_state
   
   return next_state, experience
@@ -173,21 +174,17 @@ def action_dim(space):
   raise NotImplementedError()
 
 
-def box_container(size, spec):
-  return np.zeros((*size, *spec.shape), dtype=spec.dtype)
+def container(size, spec, *, fill):
 
+  if isinstance(spec, tuple):
+    spec = Spec(*spec)
 
-def dict_container(size, spec):
-  return recursive_map(
-    lambda spec: box_container(size, spec), spec)
-
-
-def container(size, spec):
-  print(spec)
   if isinstance(spec, Spec):
-    return box_container(size, spec)
+    return np.full((*size, *spec.shape), fill, dtype=spec.dtype)
   elif isinstance(spec, OrderedDict):
-    return dict_container(size, spec)
+    return recursive_map(
+      lambda subspec: container(size, subspec, fill=fill), spec)
+  
   raise NotImplementedError()
 
 

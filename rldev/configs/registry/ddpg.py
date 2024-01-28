@@ -85,11 +85,11 @@ register("ddpg-protoge", conf)
 
 
 conf = get("ddpg-protoge")
-conf.eexplore = 0.2
+conf.eexplore = None
 conf.grad_value_clipping = -1
 conf.her = "futureactual_2_2"
 conf.replay_size = int(2.5e6)
-conf.initial_explore = 10000
+conf.initial_explore = 5000
 conf.warm_up = 5000
 conf.action_l2_regularization = 1e-2
 conf.optimize_every = 2

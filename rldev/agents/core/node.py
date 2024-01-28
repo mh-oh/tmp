@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import *
 
 
-class Node(metaclass=ABCMeta):
+class Node:
 
   def __init__(self, agent, 
                disable_save=False, disable_load=False):
@@ -18,11 +18,9 @@ class Node(metaclass=ABCMeta):
   def agent(self):
     return self._agent
 
-  @abstractmethod
   def save(self, dir: Path):
     pass
 
-  @abstractmethod
   def load(self, dir: Path):
     pass
 

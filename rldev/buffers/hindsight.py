@@ -1,66 +1,58 @@
 
 import numpy as np
-import pickle
+import torch as th
 
-from collections import OrderedDict
 from gymnasium import spaces
-from overrides import overrides
-from pathlib import Path
+from typing import Dict, Any, Callable, Union
 
-from rldev.agents.core import Node, Agent
-from rldev.buffers.basic import DictBuffer, DictExperience
-from rldev.utils import torch as ptu
+from rldev.buffers.basic import EpisodicDictBuffer, DictExperience
 from rldev.utils.structure import recursive_map
 
-class HindsightBuffer(DictBuffer):
+
+DictObs = Dict[str, Union[np.ndarray, "DictObs"]]
+BoxObs = np.ndarray
+Obs = Union[DictObs, BoxObs]
+RFunction = Callable[[Obs, np.ndarray, Obs], np.ndarray]
+
+
+class HindsightBuffer(EpisodicDictBuffer):
 
   def __init__(self, 
-               agent: Agent, 
                n_envs: int, 
                capacity: int, 
-               observation_space: spaces.Dict, 
-               action_space: spaces.Dict,
-               mode: str):
-    super().__init__(agent, 
-                     n_envs, 
+               observation_space: Union[spaces.Dict, spaces.Box], 
+               action_space: spaces.Box,
+               compute_reward: RFunction,
+               mode: str,
+               handle_timeouts: bool = True):
+    super().__init__(n_envs, 
                      capacity, 
                      observation_space, 
-                     action_space)
+                     action_space,
+                     handle_timeouts)
 
     capacity, n_envs = self._capacity, self._n_envs
     self._episode_cursor = np.zeros((n_envs,), dtype=int)
     self._episode_length = np.zeros((capacity, n_envs), dtype=int)
     self._episode_starts = np.zeros((capacity, n_envs), dtype=int)
 
+    self._compute_reward = compute_reward
     self._fut, self._act, self._ach, self._beh = parse_hindsight_mode(mode)
 
-  def _process_experience(self, exp):
+  def add(self,
+          observation: Dict,
+          action: np.ndarray,
+          reward: np.ndarray,
+          next_observation: Dict,
+          done: np.ndarray,
+          info: Dict[str, Any]):
 
-    for i in range(self._n_envs):
-      s = self._episode_starts[self._cursor, i]
-      l = self._episode_length[self._cursor, i]
-      if l > 0:
-        index = np.arange(self._cursor, s + l) % self._capacity
-        self._episode_length[index, i] = 0
-
-    self._episode_starts[self._cursor, :] = np.copy(self._episode_cursor)
-
-    super().add(exp.state,
-                exp.action,
-                exp.reward,
-                exp.next_state,
-                exp.done,
-                {})
-
-    for i in range(self._n_envs):
-      if exp.trajectory_over[i]:
-        s = self._episode_cursor[i]
-        e = self._cursor
-        if e < s:
-          e += self._capacity
-        index = np.arange(s, e) % self._capacity
-        self._episode_length[index, i] = e - s
-        self._episode_cursor[i] = self._cursor
+    super().add(observation,
+                action,
+                reward,
+                next_observation,
+                done,
+                info)
 
   def none(self, index):
 
@@ -188,17 +180,16 @@ class HindsightBuffer(DictBuffer):
                           next_observations,
                           dones)
 
-  @overrides
   def sample(self, size: int):
 
-    is_episode = self._episode_length > 0
-    if not np.any(is_episode):
+    is_done_episode = self._episode_length > 0
+    if not np.any(is_done_episode):
       raise ValueError(f"")
 
-    episode_index = np.flatnonzero(is_episode)
+    episode_index = np.flatnonzero(is_done_episode)
     index = np.random.choice(episode_index, size=size, replace=True)
 
-    if self.agent.env_steps > self.agent.config.future_warm_up:
+    if len(self) > 25000:
       fut_batch_size, act_batch_size, ach_batch_size, beh_batch_size, real_batch_size = np.random.multinomial(
           size, [self._fut, self._act, self._ach, self._beh, 1.])
     else:
@@ -234,50 +225,18 @@ class HindsightBuffer(DictBuffer):
                           achieved.action,
                           behavior.action)
 
-    info = {"next_observation": next_observations,
-            "action": actions}
-    rewards = self._agent._env.compute_reward(
-      next_observations["achieved_goal"], observations["desired_goal"], info).reshape(size, 1).astype(np.float32)
+    rewards = self._compute_reward(observations, actions,
+                                   next_observations).reshape(size, 1).astype(np.float32)
 
-    if self._agent._config.get('never_done'):
+    if self._handle_timeouts:
       dones = np.zeros_like(rewards, dtype=np.float32)
-    elif self._agent._config.get('first_visit_succ'):
-      dones = np.round(rewards + 1.)
-    else:
-      raise ValueError("Never done or first visit succ must be set in goal environments to use HER.")
-    
-    gammas = self._agent._config.gamma * (1. - dones)
 
-    observations = np.concatenate([observations["observation"], observations["desired_goal"]], axis=-1)
-    next_observations = np.concatenate([next_observations["observation"], next_observations["desired_goal"]], axis=-1)
-    
-    fn = self.agent._observation_normalizer
-    if fn is not None:
-      observations = fn(observations, update=False).astype(np.float32)
-      next_observations = fn(next_observations, update=False).astype(np.float32)
+    return (observations,
+            actions,
+            rewards,
+            next_observations,
+            dones)
 
-    return (ptu.torch(observations), ptu.torch(actions),
-          ptu.torch(rewards), ptu.torch(next_observations),
-          ptu.torch(gammas))
-
-  @overrides
-  def __len__(self):
-    return (self._capacity if self._full else self._cursor) * self._n_envs
-
-  @overrides
-  def save(self, dir: Path):
-    return
-    dir.mkdir(parents=True, exist_ok=True)
-    state = self._buffer._get_state()
-    with open(dir / "_buffer.pkl", "wb") as fout:
-      pickle.dump(state, fout)
-
-  @overrides
-  def load(self, dir: Path):
-    return
-    with open(dir / "_buffer.pkl", "rb") as fin:
-      state = pickle.load(fin)
-    self._buffer._set_state(state)
 
 def parse_hindsight_mode(hindsight_mode : str):
   if 'future_' in hindsight_mode:
