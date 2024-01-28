@@ -66,18 +66,27 @@ def main(conf):
   if e.goal_env:
     conf.never_done = True  # NOTE: This is important in the standard Goal environments, which are never done
 
+  assert conf.actor_lr == conf.critic_lr
   agent = DDPG(conf,
                env,
                test_env,
+               observation_normalizer,
+               buffer,
                feature_extractor,
                policy,
-               buffer,
-               observation_normalizer,
-               action_noise)
+               action_noise,
+               conf.actor_lr,
+               learning_starts=5000,
+               batch_size=2000,
+               tau=0.05,
+               gamma=0.98,
+               train_every_n_steps=8,
+               gradient_steps=4)
   
   num_eps = max(conf.num_envs * 3, 10)
   agent.test(num_eps)
-  agent.run(conf.epoch_steps, num_eps)
+  # agent.run(conf.epoch_steps, num_eps)
+  agent.learn(conf.steps, 100, num_eps)
 
 
 if __name__ == "__main__":

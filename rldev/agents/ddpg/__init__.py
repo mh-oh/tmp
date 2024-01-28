@@ -7,8 +7,11 @@ from abc import *
 from overrides import overrides
 from pathlib import Path
 
+from rldev.agents import ActionNoise, ObservationNormalizer
 from rldev.agents.core import OffPolicyAgent
 from rldev.agents.policy.ac import Policy
+from rldev.buffers.basic import Buffer
+from rldev.feature_extractor import Extractor
 from rldev.utils.nn import soft_update
 
 
@@ -123,28 +126,73 @@ class DDPGPolicy(Policy):
 
 
 class DDPG(OffPolicyAgent):
+  u"""Deep Deterministic Policy Gradient (DDPG).
 
-  def __init__(
-      self,
-      config,
-      env,
-      test_env,
-      feature_extractor,
-      policy: DDPGPolicy,
-      buffer,
-      observation_normalizer=None,
-      action_noise=None,
-      logging=True):
+  Arguments:
+
+    env (Env): The vectorized training environments.
+    test_env (Env): The vectorized evaluation environments.
+    observation_normalizer (ObservationNormalizer): 
+      Normalize observations.
+    buffer (Buffer): The replay buffer.
+    feature_extractor (Extractor): Common feature extractor.
+    policy (): The policy model to use.
+    action_noise (ActionNoise): Add noises to actions.
+    lr (float): Learning rate for the optimizer..
+    learning_starts (int): How many steps the agent takes to 
+      collect transitions before training starts.
+    batch_size (int): Minibatch size for replay buffer sampling.
+    tau (float): The polyak update coefficient.
+    gamma (float): The discount factor.
+    train_every_n_steps (int): Train this agent every these steps.
+      It must be a multiple of `env.n_envs`.
+    gradient_steps (int): How many gradient steps to take.
+    logging_window (int): Window size for logging, specifying 
+      the number of episodes to average.
+    verbose (int): Verbosity.
+
+  References:
+    - http://proceedings.mlr.press/v32/silver14.pdf
+    - https://arxiv.org/abs/1509.02971
+    - https://spinningup.openai.com/en/latest/algorithms/ddpg.html
+
+  """
+
+  def __init__(self,
+               config,
+               env,
+               test_env,
+               observation_normalizer: ObservationNormalizer,
+               buffer: Buffer,
+               feature_extractor: Extractor,
+               policy: DDPGPolicy,
+               action_noise: ActionNoise,
+               lr: float,
+               learning_starts: int,
+               batch_size: int = 256,
+               tau: float = 0.005,
+               gamma: float = 0.99,
+               train_every_n_steps: int = -1,
+               gradient_steps: int = 1,
+               logging_window: int = 30,
+               verbose: int = 0):
     super().__init__(config, 
                      env, 
                      test_env, 
+                     observation_normalizer,
+                     buffer, 
                      feature_extractor, 
                      policy, 
-                     buffer, 
-                     logging)
-
-    self._observation_normalizer = observation_normalizer
-    self._action_noise = action_noise
+                     action_noise, 
+                     lr,
+                     learning_starts,
+                     batch_size,
+                     tau,
+                     gamma,
+                     train_every_n_steps,
+                     gradient_steps,
+                     logging_window,
+                     verbose)
 
   @overrides
   def process_episodic_records(self, done):
@@ -164,11 +212,11 @@ class DDPG(OffPolicyAgent):
   def optimize(self):
 
     config = self.config
-    buffer = self.buffer
+    buffer = self._buffer
 
     if len(buffer) > config.warm_up:
       print("optimize", len(buffer))
       self._policy.optimize_batch(*self.sample_batch())
-      if self.opt_steps % config.target_network_update_freq >= 0:
-        for target, model in self._policy.targets_and_models:
-          soft_update(target, model, config.target_network_update_frac)
+      # if self.opt_steps % config.target_network_update_freq >= 0:
+      for target, model in self._policy.targets_and_models:
+        soft_update(target, model, config.target_network_update_frac)
