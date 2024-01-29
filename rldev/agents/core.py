@@ -1,12 +1,10 @@
 
 import numpy as np
-import time
 import wandb
 
 from abc import *
 from collections import deque
 from copy import deepcopy
-from overrides import overrides
 from pathlib import Path
 
 from rldev.agents import ActionNoise, ObservationNormalizer
@@ -34,7 +32,7 @@ class Agent(metaclass=ABCMeta):
     self._env = env
     self._test_env = test_env
     self._feature_extractor = feature_extractor
-    self._policy = policy(self)
+    self._policy = policy
     self._logger = self.setup_logger() if logging_window > 0 else DummyLogger(self)
 
     self._training = True
@@ -135,7 +133,7 @@ class OffPolicyAgent(Agent):
     self._observation_normalizer = observation_normalizer
     self._buffer = buffer
     self._feature_extractor = feature_extractor
-    self._policy = policy(self)
+    self._policy = policy
     self._action_noise = action_noise
     self._lr = lr
     self._learning_starts = learning_starts
@@ -146,9 +144,6 @@ class OffPolicyAgent(Agent):
     self._gradient_steps = gradient_steps
     self._logging_window = logging_window
     self._verbose = verbose
-
-    self._steps = 0
-    self._episodes = 0
 
     self.env_steps = 0
     self.opt_steps = 0
@@ -182,6 +177,24 @@ class OffPolicyAgent(Agent):
   @property
   def buffer(self):
     return self._buffer
+
+  def _get_action(self, 
+                  observation: Obs[np.ndarray], 
+                  training: bool = True):
+
+    env = self._env
+    if self._step < self._learning_starts: # Warmup phase
+      return np.array([
+        env.action_space.sample() for _ in range(env.num_envs)])
+
+    observation = self._observation_normalizer(observation, update_stats=training)
+    observation = self._feature_extractor(observation)
+    action = self._policy(observation)
+    if training:
+      action = self._action_noise(action)
+
+    max = self._env.max_action
+    return np.clip(action, -max, max)
 
   def get_transitions(self):
 
@@ -219,7 +232,7 @@ class OffPolicyAgent(Agent):
     while self._step < training_steps:
       self.training_mode()
 
-      action = self._policy(self._observation)
+      action = self._get_action(self._observation)
       next_observation, reward, done, info = self._env.step(action)
 
       self._store_transitions(self._observation, 
@@ -338,7 +351,7 @@ class OffPolicyAgent(Agent):
       episode_return = np.zeros((self._n_envs,))
 
       while not np.all(done):
-        action = self._policy(observation)
+        action = self._get_action(observation)
         observation, reward, done, info = env.step(action)
         for i in range(self._n_envs):
           if not done[i]:

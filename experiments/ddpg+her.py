@@ -6,9 +6,9 @@ import torch.nn as nn
 from rldev.agents.observation_normalizer import MeanStdNormalizer
 from rldev.agents.action_noise import GaussianActionNoise
 from rldev.agents.ddpg import DDPG, DDPGPolicy
-from rldev.agents.policy.ac import Actor, Critic
+from rldev.agents.ddpg.policies import Actor, Critic
 from rldev.buffers.hindsight import HindsightBuffer
-from rldev.environments import make_vec_env
+from rldev.environments.vec import make_vec_env
 from rldev.feature_extractor import Combine
 from rldev.launcher import configure
 from rldev.utils import torch as ptu
@@ -35,9 +35,7 @@ def main(conf):
                               keys=["observation", "desired_goal"])
   print(feature_extractor.feature_space)
   policy = (
-    lambda agent: 
-      DDPGPolicy(agent, 
-                 env.max_action,
+      DDPGPolicy(env.max_action,
                  actor,
                  conf.actor_lr,
                  conf.actor_weight_decay,
@@ -80,7 +78,6 @@ def main(conf):
   
   num_eps = max(conf.num_envs * 3, 10)
   agent.test(num_eps)
-  # agent.run(conf.epoch_steps, num_eps)
   agent.learn(conf.steps, 5000, num_eps)
 
 

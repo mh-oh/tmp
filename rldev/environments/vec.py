@@ -3,7 +3,6 @@ import gymnasium as gym
 import numpy as np
 
 from stable_baselines3.common.vec_env import DummyVecEnv
-from stable_baselines3.common.vec_env.base_vec_env import VecEnv
 
 
 def make_env(name: str, seed: int, rank: int = 0):
