@@ -32,8 +32,7 @@ def main(conf):
   critic = Critic(FCBody(e.state_dim + e.goal_dim + e.action_dim, conf.policy_layers), 1).to(ptu.device())
 
   feature_extractor = Combine(env.observation_space,
-                              keys=["observation",
-                                    "desired_goal"])
+                              keys=["observation", "desired_goal"])
   print(feature_extractor.feature_space)
   policy = (
     lambda agent: 
@@ -63,10 +62,6 @@ def main(conf):
   observation_normalizer = MeanStdNormalizer(env.observation_space)
   action_noise = GaussianActionNoise(mean=0.0, stddev=conf.action_noise)
 
-  if e.goal_env:
-    conf.never_done = True  # NOTE: This is important in the standard Goal environments, which are never done
-
-  assert conf.actor_lr == conf.critic_lr
   agent = DDPG(conf,
                env,
                test_env,
@@ -75,7 +70,7 @@ def main(conf):
                feature_extractor,
                policy,
                action_noise,
-               conf.actor_lr,
+               lr=1e-3,
                learning_starts=5000,
                batch_size=2000,
                tau=0.05,
@@ -86,7 +81,7 @@ def main(conf):
   num_eps = max(conf.num_envs * 3, 10)
   agent.test(num_eps)
   # agent.run(conf.epoch_steps, num_eps)
-  agent.learn(conf.steps, 100, num_eps)
+  agent.learn(conf.steps, 5000, num_eps)
 
 
 if __name__ == "__main__":

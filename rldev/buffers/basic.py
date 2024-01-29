@@ -4,10 +4,10 @@ import numpy as np
 from abc import *
 from gymnasium import spaces
 from overrides import overrides
-from typing import *
 
 from rldev.utils.env import observation_spec, action_spec, container, DictExperience
 from rldev.utils.structure import recursive_map
+from rldev.utils.typing import Any, Dict, DictObs, List
 
 
 class Buffer(metaclass=ABCMeta):
@@ -88,12 +88,12 @@ class DictBuffer(Buffer):
     return recursive_map(lambda x: x[index].copy(), x)
 
   def add(self,
-          observation: Dict,
+          observation: DictObs[np.ndarray],
           action: np.ndarray,
           reward: np.ndarray,
-          next_observation: Dict,
+          next_observation: DictObs[np.ndarray],
           done: np.ndarray,
-          info: Dict[str, Any]):
+          info: List[Dict[str, Any]]):
 
     def store(to, what):
       to[self._cursor] = np.copy(what)
@@ -101,9 +101,9 @@ class DictBuffer(Buffer):
     store(self._actions, action)
     store(self._rewards, reward)
     store(self._dones, done)
-    # if self._handle_timeouts:
-    #   store(self._timeouts, np.array(
-    #     [x.get("TimeLimit.truncated", False) for x in info]))
+    if self._handle_timeouts:
+      store(self._timeouts, np.array(
+        [x.get("TimeLimit.truncated", False) for x in info]))
 
     def store(to, what):
       def fn(x, y):
@@ -119,17 +119,35 @@ class DictBuffer(Buffer):
 
   def get(self, index):
 
-    observations = self._recursive_get(self._observations, index)
-    actions = self._actions[index].copy()
-    rewards = self._rewards[index].copy()
-    next_observations = self._recursive_get(self._next_observations, index)
-    dones = self._dones[index].copy()
+    (observations,
+     actions,
+     rewards,
+     next_observations,
+     dones,
+     timeouts) = self[index]
 
     return (observations,
             actions,
             rewards,
             next_observations,
-            dones)
+            dones * (1 - timeouts))
+
+  def __getitem__(self, index):
+
+    observations = self._recursive_get(self._observations, index)
+    actions = self._actions[index].copy()
+    rewards = self._rewards[index].copy()
+    next_observations = self._recursive_get(self._next_observations, index)
+    dones = self._dones[index].copy()
+    timeouts = (self._timeouts[index].copy() 
+                if self._handle_timeouts else None)
+
+    return (observations,
+            actions,
+            rewards,
+            next_observations,
+            dones,
+            timeouts)
 
   @overrides
   def sample(self, size: int):
@@ -140,22 +158,7 @@ class DictBuffer(Buffer):
     index = (index, 
              np.random.randint(
                0, high=n_envs, size=(len(index),)))
-
-    (observations,
-     actions,
-     rewards,
-     next_observations,
-     dones) = self.get(index)
-    rewards = rewards[index].reshape(size, 1).astype(np.float32)
-
-    if self._handle_timeouts:
-      dones = np.zeros_like(rewards, dtype=np.float32)
-
-    return (observations,
-            actions,
-            rewards,
-            next_observations,
-            dones)
+    return self.get(index)
 
 
 class EpisodicDictBuffer(DictBuffer):

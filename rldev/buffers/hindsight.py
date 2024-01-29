@@ -39,39 +39,10 @@ class HindsightBuffer(EpisodicDictBuffer):
     self._compute_reward = compute_reward
     self._fut, self._act, self._ach, self._beh = parse_hindsight_mode(mode)
 
-  def add(self,
-          observation: Dict,
-          action: np.ndarray,
-          reward: np.ndarray,
-          next_observation: Dict,
-          done: np.ndarray,
-          info: Dict[str, Any]):
-
-    super().add(observation,
-                action,
-                reward,
-                next_observation,
-                done,
-                info)
-
   def none(self, index):
 
     index = np.unravel_index(index, self._episode_length.shape)
-
-    def get(x, index):
-      return recursive_map(lambda x: x[index], x)
-
-    observations = get(self._observations, index)
-    actions = self._actions[index]
-    rewards = self._rewards[index]
-    next_observations = get(self._next_observations, index)
-    dones = self._dones[index]
-
-    return DictExperience(observations,
-                          actions,
-                          rewards,
-                          next_observations,
-                          dones)
+    return self.get(index)
 
   def real(self, index):
 
@@ -184,7 +155,7 @@ class HindsightBuffer(EpisodicDictBuffer):
 
     is_done_episode = self._episode_length > 0
     if not np.any(is_done_episode):
-      raise ValueError(f"")
+      raise ValueError(f"No episode ends")
 
     episode_index = np.flatnonzero(is_done_episode)
     index = np.random.choice(episode_index, size=size, replace=True)
@@ -224,12 +195,14 @@ class HindsightBuffer(EpisodicDictBuffer):
                           actual.action,
                           achieved.action,
                           behavior.action)
+    dones = concatenate(real.done,
+                        future.done,
+                        actual.done,
+                        achieved.done,
+                        behavior.done)
 
     rewards = self._compute_reward(observations, actions,
-                                   next_observations).reshape(size, 1).astype(np.float32)
-
-    if self._handle_timeouts:
-      dones = np.zeros_like(rewards, dtype=np.float32)
+                                   next_observations)
 
     return (observations,
             actions,

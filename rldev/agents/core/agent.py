@@ -8,15 +8,14 @@ from collections import deque
 from copy import deepcopy
 from overrides import overrides
 from pathlib import Path
-from typing import *
 
 from rldev.agents import ActionNoise, ObservationNormalizer
 from rldev.buffers.basic import Buffer
 from rldev.feature_extractor import Extractor
 from rldev.logging import WandbLogger, DummyLogger
 from rldev.utils import torch as thu
-from rldev.utils.env import debug_vectorized_experience, get_success_info
-from rldev.utils.time import return_elapsed_time
+from rldev.utils.env import get_success_info
+from rldev.utils.typing import Obs, List, Dict, Any
 
 
 class Agent(metaclass=ABCMeta):
@@ -58,10 +57,6 @@ class Agent(metaclass=ABCMeta):
   @property
   def logger(self):
     return self._logger
-
-  @abstractmethod
-  def run(self, *args, **kwargs):
-    ...
   
   def training_mode(self):
     self._training = True
@@ -103,11 +98,11 @@ class OffPolicyAgent(Agent):
   Note the followings to understand the agent's behavior.
 
   * The agent starts learning on a call to `learn()`.
-  * You should want to re-implement `train()` function that 
-    performs training of networks (e.g., actor).
+  * You should want to re-implement `update()` function that 
+    updates network parameters (e.g., actor and critic).
   * The agent by default is evaluated periodically on a separate
     test environment `test_env`.
-    
+
   """
 
   def __init__(self, 
@@ -188,13 +183,13 @@ class OffPolicyAgent(Agent):
   def buffer(self):
     return self._buffer
 
-  def sample_batch(self):
+  def get_transitions(self):
 
     (observation, 
      action, 
      reward, 
      next_observation, 
-     done) = self._buffer.sample(self.config.batch_size)
+     done) = self._buffer.sample(self._batch_size)
 
     fn = self._observation_normalizer
     if fn is not None:
@@ -205,27 +200,19 @@ class OffPolicyAgent(Agent):
     observation = fn(observation)
     next_observation = fn(next_observation)
 
+    reward = reward.reshape(-1, 1).astype(np.float32)
+    done = done.reshape(-1, 1).astype(np.float32)
+
+    assert done.sum() == 0.0
     return (thu.torch(observation),
             thu.torch(action),
             thu.torch(reward),
             thu.torch(next_observation),
             thu.torch(done))
 
-  @overrides
-  def run(self, 
-          epoch_steps: int, 
-          test_episodes: int, *args, **kwargs):
-
-    self.state = self._env.reset()
-    for epoch in range(int(self._training_steps // epoch_steps)):
-      elapsed = self.train(epoch_steps)
-      print(f"({epoch}) Training one epoch takes {elapsed:.2f} seconds.")
-      elapsed = self.test(test_episodes)
-      print(f"({epoch}) Evaluation takes {elapsed:.2f} seconds.")
-
   def learn(self,
             training_steps: int,
-            test_every_n_episodes: int, 
+            test_every_n_steps: int, 
             test_episodes: int):
 
     self._observation = self._env.reset()
@@ -235,39 +222,35 @@ class OffPolicyAgent(Agent):
       action = self._policy(self._observation)
       next_observation, reward, done, info = self._env.step(action)
 
-      self._step += self._n_envs
       self._store_transitions(self._observation, 
                               action, 
-                              next_observation, 
                               reward, 
+                              next_observation, 
                               done, 
                               info)
-      self._observation = next_observation
-
-      for i in range(self._n_envs):
-        success = get_success_info(info[i])
-        if success is not None:
-          self._episode_success[i] = max(self._episode_success[i], success)
-        self._episode_return[i] += reward[i]
-        self._episode_step[i] += 1
-      self.process_episodic_records(done)
-
       if ((self._step > self._learning_starts) and 
-          (self._step % self._train_every_n_steps == 0)):
-        for _ in range(self._gradient_steps):
-          self.optimize()
+          (self._step % self._train_every_n_steps < self._n_envs)):
+        self.update(self._gradient_steps)
+
+      self._observation = next_observation
+      self._step += self._n_envs
+      self._episode += np.sum(done)
+      self._process_episode_stats(self._observation,
+                                  action,
+                                  reward,
+                                  next_observation,
+                                  done,
+                                  info)
 
       if ((self._step > 0) and 
-          (self._step % 5000 == 0)):
-        if self._episode % test_every_n_episodes != 0:
-          raise AssertionError(f"{self._episode}")
+          (self._step % test_every_n_steps == 0)):
         self.test(test_episodes)
 
   def _store_transitions(self,
-                         observation: Union[np.ndarray, Dict[str, np.ndarray]],
+                         observation: Obs[np.ndarray],
                          action: np.ndarray,
-                         next_observation: Union[np.ndarray, Dict[str, np.ndarray]],
                          reward: np.ndarray,
+                         next_observation: Obs[np.ndarray],
                          done: np.ndarray,
                          info: List[Dict[str, Any]]):
     u"""Store transitions in the replay buffer.
@@ -307,11 +290,22 @@ class OffPolicyAgent(Agent):
                      done,
                      info)
 
-  @abstractmethod
-  def process_episodic_records(self, done):
+  def _process_episode_stats(self,
+                             observation: Obs[np.ndarray],
+                             action: np.ndarray,
+                             reward: np.ndarray,
+                             next_observation: Obs[np.ndarray],
+                             done: np.ndarray,
+                             info: List[Dict[str, Any]]):
+
+    for i in range(self._n_envs):
+      self._episode_return[i] += reward[i]
+      self._episode_step[i] += 1
+      success = get_success_info(info[i])
+      if success is not None:
+        self._episode_success[i] = max(self._episode_success[i], success)
 
     if np.any(done):
-      self._episode += np.sum(done)
       self._episode_steps.extend(self._episode_step[done])
       self._episode_successes.extend(self._episode_success[done])
       self._episode_returns.extend(self._episode_return[done])
@@ -325,43 +319,10 @@ class OffPolicyAgent(Agent):
       self.logger.log("train/success_rate", np.mean(self._episode_successes), self._step)
       self.logger.log("train/return", np.mean(self._episode_returns), self._step)
 
-  def train(self, epoch_steps: int):
-
-    self.training_mode()
-
-    env = self._env
-
-    for _ in range(epoch_steps // env.num_envs):
-      action = self._policy(self._observation)
-      next_state, reward, done, info = env.step(action)
-
-      self._observation, experience = debug_vectorized_experience(self._observation, action, next_state, reward, done, info)
-      for i in range(self._n_envs):
-        success = get_success_info(experience.info[i])
-        if success is not None:
-          self._episode_success[i] = max(self._episode_success[i], success)
-        self._episode_return[i] += experience.reward[i]
-        self._episode_step[i] += 1
-      self._step += self._n_envs
-      self.process_episodic_records(experience.trajectory_over)
-
-      self.process_experience(experience)
-      
-      for _ in range(env.num_envs):
-        self.env_steps += 1
-        if self.env_steps % self.config.optimize_every == 0:
-          self.opt_steps += 1
-          self.optimize()
-
   @abstractmethod
-  def optimize(self):
+  def update(self, gradient_steps: int):
     ...
 
-  @abstractmethod
-  def process_experience(self, experience):
-    ...
-
-  @return_elapsed_time
   def test(self, n_episodes: int):
 
     self.evaluation_mode()

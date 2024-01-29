@@ -195,28 +195,8 @@ class DDPG(OffPolicyAgent):
                      verbose)
 
   @overrides
-  def process_episodic_records(self, done):
-    return super().process_episodic_records(done)
-
-  @overrides
-  def process_experience(self, experience):
-    exp = experience
-    self._buffer.add(exp.state,
-                     exp.action,
-                     exp.reward,
-                     exp.next_state,
-                     exp.done,
-                     {})
-
-  @overrides
-  def optimize(self):
-
-    config = self.config
-    buffer = self._buffer
-
-    if len(buffer) > config.warm_up:
-      print("optimize", len(buffer))
-      self._policy.optimize_batch(*self.sample_batch())
-      # if self.opt_steps % config.target_network_update_freq >= 0:
+  def update(self, gradient_steps: int):
+    for _ in range(gradient_steps):
+      self._policy.optimize_batch(*self.get_transitions())
       for target, model in self._policy.targets_and_models:
-        soft_update(target, model, config.target_network_update_frac)
+        soft_update(target, model, self._tau)
